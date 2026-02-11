@@ -28,49 +28,24 @@ DEBUG = os.environ.get('DEBUG', 'False') == 'True'
 
 ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', 'localhost,127.0.0.1,stransport-djm8.onrender.com').split(',')
 
-# CSRF Settings
-CSRF_TRUSTED_ORIGINS = [
-    'https://stransport-djm8.onrender.com',
-    'http://stransport-djm8.onrender.com',
-    'http://localhost:8000',
-    'http://127.0.0.1:8000',
-]
-
-# Cookie settings for production safety
-CSRF_COOKIE_SAMESITE = 'Lax'
-SESSION_COOKIE_SAMESITE = 'Lax'
-CSRF_COOKIE_SECURE = not DEBUG  # HTTPS only in production
-SESSION_COOKIE_SECURE = not DEBUG
-CSRF_COOKIE_HTTPONLY = False  # Allow JS to read CSRF token
-SESSION_COOKIE_HTTPONLY = True
-
-
-
-# Application definition
-
-INSTALLED_APPS = [
-    "stransport.apps.StransportConfig",
-    "trivia.apps.TriviaConfig",
-
-    "django.contrib.admin",
-    "django.contrib.auth",
-    "django.contrib.contenttypes",
-    "django.contrib.sessions",
-    "django.contrib.messages",
-    "django.contrib.staticfiles",
-]
-
-
+# Middleware configuration
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
-    'whitenoise.middleware.WhiteNoiseMiddleware',  # ✅ MUST be early for static files
+]
+
+# ✅ Only add WhiteNoise on production (Render.com)
+if not DEBUG:
+    MIDDLEWARE.append('whitenoise.middleware.WhiteNoiseMiddleware')
+
+# Continue with other middleware
+MIDDLEWARE.extend([
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
-]
+])
 
 ROOT_URLCONF = 'service.urls'
 
