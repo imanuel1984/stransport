@@ -1,94 +1,10 @@
-STransport & Trivia – CS50x Final Projects
+STransport & Trivia
 Video Demo:
 
 <https://youtu.be/DhUeRmmpLrs>
 
 ---
 
-## 🎮 Trivia App - משחק טריוויה אינטראקטיבי עם AI
-
-משחק טריוויה מתקדם עם תכונות AI חכמות, בנוי על Django.
-
-### ✨ תכונות Trivia
-
-- 💡 **רמזים חכמים מבוססי AI** - מקסימום 1 לכל שאלה
-- 💬 **צ'אט עם AI לעזרה** - מקסימום 2 הודעות לכל שאלה
-- 📖 **הסברים מפורטים** - מקסימום 1 לכל שאלה
-- 🎯 **הגבלת שימוש** למניעת עומס API
-- 🌐 **תמיכה מלאה בעברית**
-- 🏆 **מערכת ניקוד ומעקב הישגים**
-
-### 🐳 Docker - הרצה עם Docker Compose
-
-```bash
-# Clone the repository
-git clone <your-repo-url>
-cd cs50x-final-project
-
-# הגדר משתני סביבה
-export GROQ_API_KEY=your_groq_api_key_here
-export DOCKER_USERNAME=your_dockerhub_username
-
-# הרץ את האפליקציה
-docker-compose up -d
-
-# בדוק לוגים
-docker-compose logs -f web
-
-# עצור
-docker-compose down
-```
-
-האפליקציה תהיה זמינה: http://localhost:8000
-
-### 🚀 CI/CD עם GitHub Actions
-
-הפרויקט כולל workflow אוטומטי לבניה ודחיפה אוטומטית ל-Docker Hub.
-
-**הגדרת Secrets ב-GitHub:**
-1. Settings → Secrets and variables → Actions
-2. הוסף:
-   - `DOCKER_USERNAME` - שם משתמש Docker Hub
-   - `DOCKER_PASSWORD` - סיסמה או Access Token
-
-**Workflow מופעל ב:**
-- Push ל-`main`, `master`, `develop`
-- יצירת tags: `v*.*.*`
-- Pull Requests
-- הפעלה ידנית
-
-**Docker Images נוצרים:**
-- `latest` - גרסה אחרונה
-- `main` / `develop` - לפי branch
-- `v1.0.0` - version tags
-- `sha-abc123` - commit hash
-
-### 📦 Docker Hub - דחיפה ידנית
-
-```bash
-docker login
-docker tag trivia-app your-username/trivia-app:latest
-docker push your-username/trivia-app:latest
-```
-
-### 🛠️ התקנה מקומית (ללא Docker)
-
-```bash
-pip install -r requirements.txt
-export GROQ_API_KEY=your_api_key
-python manage.py migrate
-python manage.py collectstatic --noinput
-python manage.py runserver
-```
-
-### 🔑 משתני סביבה
-
-- `GROQ_API_KEY` - (נדרש) API key לשירות Groq AI
-- `SECRET_KEY` - Django secret key
-- `DEBUG` - False בפרודקשן
-- `ALLOWED_HOSTS` - רשימת hosts מורשים
-
----
 
 ## 🚗 STransport - Volunteer Transport Coordination Platform
 
@@ -237,3 +153,87 @@ Could add a distinct “completed” state instead of deletion for full audit hi
 Use of AI Tools
 
 AI-based tools were used as an assistant for debugging and clarification. All architectural decisions, logic, and final implementation were completed by the author.
+## 🎮 Trivia App - משחק טריוויה אינטראקטיבי עם AI
+
+משחק טריוויה מתקדם עם תכונות AI חכמות, בנוי על Django.
+
+### ✨ תכונות Trivia
+
+- 💡 **רמזים חכמים מבוססי AI** - מקסימום 1 לכל שאלה
+- 💬 **צ'אט עם AI לעזרה** - מקסימום 2 הודעות לכל שאלה
+- 📖 **הסברים מפורטים** - מקסימום 1 לכל שאלה
+- 🎯 **הגבלת שימוש** למניעת עומס API
+- 🌐 **תמיכה מלאה בעברית**
+- 🏆 **מערכת ניקוד ומעקב הישגים**
+
+### 🐳 Docker - הרצה עם Docker Compose
+
+```bash
+# Clone the repository
+git clone <your-repo-url>
+cd cs50x-final-project
+
+# הגדר משתני סביבה
+export GROQ_API_KEY=your_groq_api_key_here
+export DOCKER_USERNAME=your_dockerhub_username
+
+# הרץ את האפליקציה
+docker-compose up -d
+
+# בדוק לוגים
+docker-compose logs -f web
+
+# עצור
+docker-compose down
+```
+
+האפליקציה תהיה זמינה: http://localhost:8000
+
+### 🚀 CI/CD עם GitHub Actions
+
+הפרויקט כולל workflow אוטומטי לבניה ודחיפה אוטומטית ל-Docker Hub.
+
+**הגדרת Secrets ב-GitHub:**
+1. Settings → Secrets and variables → Actions
+2. הוסף:
+   - `DOCKER_USERNAME` - שם משתמש Docker Hub
+   - `DOCKER_PASSWORD` - סיסמה או Access Token
+
+**Workflow מופעל ב:**
+- Push ל-`main`, `master`, `develop`
+- יצירת tags: `v*.*.*`
+- Pull Requests
+- הפעלה ידנית
+
+**Docker Images נוצרים:**
+- `latest` - גרסה אחרונה
+- `main` / `develop` - לפי branch
+- `v1.0.0` - version tags
+- `sha-abc123` - commit hash
+
+### 📦 Docker Hub - דחיפה ידנית
+
+```bash
+docker login
+docker tag trivia-app your-username/trivia-app:latest
+docker push your-username/trivia-app:latest
+```
+
+### 🛠️ התקנה מקומית (ללא Docker)
+
+```bash
+pip install -r requirements.txt
+export GROQ_API_KEY=your_api_key
+python manage.py migrate
+python manage.py collectstatic --noinput
+python manage.py runserver
+```
+
+### 🔑 משתני סביבה
+
+- `GROQ_API_KEY` - (נדרש) API key לשירות Groq AI
+- `SECRET_KEY` - Django secret key
+- `DEBUG` - False בפרודקשן
+- `ALLOWED_HOSTS` - רשימת hosts מורשים
+
+---
