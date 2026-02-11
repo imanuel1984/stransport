@@ -6,12 +6,22 @@ import time
 from django.core.cache import cache
 
 import requests
+from functools import wraps
 from django.contrib.auth.decorators import login_required
 from django.http import JsonResponse
 from django.views.decorators.http import require_GET, require_POST
 
 GROQ_BASE_URL = "https://api.groq.com/openai/v1/chat/completions"
 GROQ_MODEL = "llama-3.1-8b-instant"
+
+
+def login_required_json(view_func):
+    @wraps(view_func)
+    def _wrapped(request, *args, **kwargs):
+        if not request.user.is_authenticated:
+            return JsonResponse({"error": "Authentication required"}, status=401)
+        return view_func(request, *args, **kwargs)
+    return _wrapped
 
 
 # =========================
@@ -91,7 +101,7 @@ def _groq_request(messages, temperature=0.25, max_tokens=1200):
 # API: Questions
 # =========================
 @require_GET
-@login_required
+@login_required_json
 def questions(request):
     """
     מחזיר:
@@ -148,7 +158,7 @@ def _check_rate_limit(user_id, question_text, feature, max_uses):
 # API: Chat (no spoilers)
 # =========================
 @require_POST
-@login_required
+@login_required_json
 def ai_chat(request):
     """
     גוף:
@@ -237,7 +247,7 @@ def ai_chat(request):
 # API: Explain (after answer)
 # =========================
 @require_POST
-@login_required
+@login_required_json
 def ai_explain(request):
     """
     גוף:
@@ -311,7 +321,7 @@ def ai_explain(request):
 # API: Translate (JSON Schema - stable)
 # =========================
 @require_POST
-@login_required
+@login_required_json
 def translate_questions(request):
     """
     גוף:

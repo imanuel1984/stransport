@@ -1,4 +1,5 @@
 from django.shortcuts import render, get_object_or_404, redirect
+from functools import wraps
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth import login
 from django.contrib.auth.forms import UserCreationForm
@@ -9,6 +10,15 @@ from django.utils.dateparse import parse_datetime
 from django.contrib.auth.models import User
 from .models import TransportRequest, TransportAssignment, Profile, TransportRejection
 import json
+
+
+def login_required_json(view_func):
+    @wraps(view_func)
+    def _wrapped(request, *args, **kwargs):
+        if not request.user.is_authenticated:
+            return JsonResponse({"error": "Authentication required"}, status=401)
+        return view_func(request, *args, **kwargs)
+    return _wrapped
 
 
 # --- SIGNUP ---
@@ -97,7 +107,7 @@ def serialize_request(r):
 
 
 # --- API: OPEN REQUESTS ---
-@login_required
+@login_required_json
 def requests_api(request):
     try:
         role = getattr(request.user.profile, "role", "")
@@ -117,7 +127,7 @@ def requests_api(request):
 
 # --- API: CREATE REQUEST ---
 @csrf_exempt
-@login_required
+@login_required_json
 def create_request_api(request):
     if request.method != "POST":
         return JsonResponse({"error": "Invalid request"}, status=400)
@@ -155,7 +165,7 @@ def create_request_api(request):
 
 # --- API: ACCEPT REQUEST ---
 @csrf_exempt
-@login_required
+@login_required_json
 def accept_request_api(request, req_id):
     if request.method != "POST":
         return JsonResponse({"error": "Invalid request"}, status=400)
@@ -174,7 +184,7 @@ def accept_request_api(request, req_id):
 
 # --- API: REJECT REQUEST ---
 @csrf_exempt
-@login_required
+@login_required_json
 def reject_request_api(request, req_id):
     if request.method != "POST":
         return JsonResponse({"error": "Invalid request"}, status=400)
@@ -209,7 +219,7 @@ def reject_request_api(request, req_id):
 
 # --- API: CANCEL REQUEST ---
 @csrf_exempt
-@login_required
+@login_required_json
 def cancel_request_api(request, req_id):
     if request.method != "POST":
         return JsonResponse({"error": "Invalid request"}, status=400)
@@ -225,7 +235,7 @@ def cancel_request_api(request, req_id):
 
 
 # --- API: ACCEPTED REQUESTS (VOLUNTEER) ---
-@login_required
+@login_required_json
 def accepted_requests_api(request):
     try:
         if request.user.profile.role != "volunteer":
@@ -240,7 +250,7 @@ def accepted_requests_api(request):
 
 
 # --- API: CLOSED REQUESTS (SICK) ---
-@login_required
+@login_required_json
 def closed_requests_api(request):
     try:
         if request.user.profile.role != "sick":
@@ -260,7 +270,7 @@ def closed_requests_api(request):
 
 # --- API: DELETE REQUEST ---
 @csrf_exempt
-@login_required
+@login_required_json
 def delete_request_api(request, req_id):
     if request.method != "POST":
         return JsonResponse({"error": "Invalid request"}, status=400)
