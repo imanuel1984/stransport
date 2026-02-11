@@ -11,6 +11,7 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
 from pathlib import Path
+import os
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -20,25 +21,27 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-fm@cfgz14adszcm8v7+1fvb!+q8owy%$&7i*xfhkah-=g0%4^v'
+SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-fm@cfgz14adszcm8v7+1fvb!+q8owy%$&7i*xfhkah-=g0%4^v')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.environ.get('DEBUG', 'False') == 'True'
 
-ALLOWED_HOSTS = ['192.168.33.20', 'localhost', '127.0.0.1','192.168.33.23']
+ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
 
-# CSRF Settings for development
+# CSRF Settings
 CSRF_TRUSTED_ORIGINS = [
+    'https://stransport-djm8.onrender.com',
+    'http://stransport-djm8.onrender.com',
     'http://localhost:8000',
     'http://127.0.0.1:8000',
-    'http://192.168.33.20:8000',
-    'http://192.168.33.23:8000',
 ]
 
-# Cookie settings for development
+# Cookie settings for production safety
 CSRF_COOKIE_SAMESITE = 'Lax'
 SESSION_COOKIE_SAMESITE = 'Lax'
-CSRF_COOKIE_HTTPONLY = False  # Allow JS to read CSRF token if needed
+CSRF_COOKIE_SECURE = not DEBUG  # HTTPS only in production
+SESSION_COOKIE_SECURE = not DEBUG
+CSRF_COOKIE_HTTPONLY = False  # Allow JS to read CSRF token
 SESSION_COOKIE_HTTPONLY = True
 
 
@@ -60,6 +63,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',  # ✅ For static files in production
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -136,6 +140,8 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 
 STATIC_URL = 'static/'
+STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
+STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
