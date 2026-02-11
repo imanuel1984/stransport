@@ -5,6 +5,20 @@ function getCookie(name) {
 }
 const CSRF = getCookie('csrftoken');
 
+async function safeJson(res) {
+  const contentType = res.headers.get('content-type') || '';
+  if (!contentType.includes('application/json')) {
+    const text = await res.text();
+    return { __error: true, status: res.status, text };
+  }
+
+  try {
+    return await res.json();
+  } catch (err) {
+    return { __error: true, status: res.status, text: String(err) };
+  }
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   const requestsContainer = document.getElementById('requests-container');
   const closedContainer = document.getElementById('closed-requests-container');
@@ -39,7 +53,11 @@ function hidePanel(el) {
     if (!requestsContainer) return;
     try {
       const res = await fetch('/api/requests/');
-      const json = await res.json();
+      const json = await safeJson(res);
+      if (json.__error) {
+        requestsContainer.innerHTML = '<p class="no-requests">שגיאת שרת. נסה להתחבר מחדש.</p>';
+        return;
+      }
 
       if (!json.requests) {
         requestsContainer.innerHTML = '<p class="no-requests">שגיאה בטעינת בקשות.</p>';
@@ -143,7 +161,11 @@ function hidePanel(el) {
 
     try {
       const res = await fetch('/api/requests/closed/');
-      const json = await res.json();
+      const json = await safeJson(res);
+      if (json.__error) {
+        closedContainer.innerHTML = '<p class="no-requests">שגיאת שרת. נסה להתחבר מחדש.</p>';
+        return;
+      }
 
       if (!json || !Array.isArray(json.requests)) {
         closedContainer.innerHTML = '<p class="no-requests">שגיאה בטעינת בקשות סגורות.</p>';
@@ -210,7 +232,11 @@ function hidePanel(el) {
     acceptedContainer.innerHTML = '<p>...טוען בקשות מאושרות</p>';
     try {
       const res = await fetch('/api/requests/accepted/');
-      const json = await res.json();
+      const json = await safeJson(res);
+      if (json.__error) {
+        acceptedContainer.innerHTML = '<p class="no-requests">שגיאת שרת. נסה להתחבר מחדש.</p>';
+        return;
+      }
       const reqs = json.requests || [];
       acceptedContainer.innerHTML = '';
 
@@ -301,7 +327,11 @@ function hidePanel(el) {
           headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF },
           body: JSON.stringify(payload),
         });
-        const json = await res.json();
+        const json = await safeJson(res);
+        if (json.__error) {
+          alert('שגיאת שרת. נסה להתחבר מחדש.');
+          return;
+        }
 
         if (json.success) {
           createForm.reset();
