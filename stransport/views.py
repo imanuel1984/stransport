@@ -1,4 +1,4 @@
-from django.shortcuts import render, get_object_or_404
+from django.shortcuts import render, get_object_or_404, redirect
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth import login
 from django.contrib.auth.forms import UserCreationForm
@@ -12,21 +12,31 @@ import json
 
 
 # --- SIGNUP ---
-@csrf_exempt
 def signup(request):
     if request.method == "POST":
         try:
-            data = json.loads(request.body)
+            if request.content_type == "application/json":
+                data = json.loads(request.body or "{}")
+            else:
+                data = request.POST
+
             form = UserCreationForm(data)
             role = data.get("role")
             if form.is_valid() and role in ["sick", "volunteer"]:
                 user = form.save()
                 Profile.objects.update_or_create(user=user, defaults={"role": role})
                 login(request, user)
-                return JsonResponse({"success": True})
-            return JsonResponse({"success": False, "errors": form.errors})
+
+                if request.content_type == "application/json":
+                    return JsonResponse({"success": True})
+                return redirect("home")
+
+            if request.content_type == "application/json":
+                return JsonResponse({"success": False, "errors": form.errors})
         except Exception as e:
-            return JsonResponse({"success": False, "error": str(e)})
+            if request.content_type == "application/json":
+                return JsonResponse({"success": False, "error": str(e)})
+
     return render(request, "registration/signup.html", {"form": UserCreationForm()})
 
 
