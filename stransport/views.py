@@ -14,8 +14,9 @@ import json
 # --- SIGNUP ---
 def signup(request):
     if request.method == "POST":
+        is_json = request.content_type.startswith("application/json")
         try:
-            if request.content_type == "application/json":
+            if is_json:
                 data = json.loads(request.body or "{}")
             else:
                 data = request.POST
@@ -27,15 +28,29 @@ def signup(request):
                 Profile.objects.update_or_create(user=user, defaults={"role": role})
                 login(request, user)
 
-                if request.content_type == "application/json":
+                if is_json:
                     return JsonResponse({"success": True})
                 return redirect("home")
 
-            if request.content_type == "application/json":
+            if is_json:
                 return JsonResponse({"success": False, "errors": form.errors})
+
+            error_message = None
+            if role not in ["sick", "volunteer"]:
+                error_message = "בחר תפקיד תקין"
+            return render(
+                request,
+                "registration/signup.html",
+                {"form": form, "error_message": error_message},
+            )
         except Exception as e:
-            if request.content_type == "application/json":
+            if is_json:
                 return JsonResponse({"success": False, "error": str(e)})
+            return render(
+                request,
+                "registration/signup.html",
+                {"form": UserCreationForm(), "error_message": str(e)},
+            )
 
     return render(request, "registration/signup.html", {"form": UserCreationForm()})
 

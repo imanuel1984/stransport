@@ -12,6 +12,13 @@
 </div>
 {% endif %}
 
+{% if error_message %}
+<div class="panel" style="border:1px solid #ef4444;background:#fef2f2;padding:12px;border-radius:8px;margin:12px 0;">
+  <strong>שגיאה:</strong>
+  {{ error_message }}
+</div>
+{% endif %}
+
 <form method="post">
   {% csrf_token %}
 
