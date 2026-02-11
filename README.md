@@ -1,4 +1,4 @@
-STransport & Trivia – CS50x Final Projects
+STransport & Trivia
 Video Demo:
 
 <https://youtu.be/DhUeRmmpLrs>
