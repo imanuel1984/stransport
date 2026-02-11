@@ -25,7 +25,7 @@ SECRET_KEY = 'django-insecure-fm@cfgz14adszcm8v7+1fvb!+q8owy%$&7i*xfhkah-=g0%4^v
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ['192.168.33.20', 'localhost', '127.0.0.1','192.168.33.23']
+ALLOWED_HOSTS = ['192.168.33.20', 'localhost', '127.0.0.1','192.168.33.23', 'stransport.onrender.com']
 
 # CSRF Settings for development
 CSRF_TRUSTED_ORIGINS = [
