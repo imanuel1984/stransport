@@ -1,0 +1,32 @@
+{% extends "stransport/layout.html" %}
+{% block title %}הרשמה{% endblock %}
+
+{% block content %}
+
+<h2>הרשמה</h2>
+
+<form method="post">
+  {% csrf_token %}
+
+  <label>שם משתמש</label>
+  {{ form.username }}
+
+  <label>סיסמה</label>
+  {{ form.password1 }}
+
+  <label>אימות סיסמה</label>
+  {{ form.password2 }}
+
+  <label>תפקיד</label>
+  <select name="role" required>
+    <option value="">בחר תפקיד…</option>
+    <option value="sick">מטופל</option>
+    <option value="volunteer">מתנדב</option>
+  </select>
+
+  <button type="submit" class="btn-primary">צור חשבון</button>
+
+</form>
+
+<p>כבר רשום? <a href="{% url 'login' %}">התחברות</a></p>
+{% endblock %}

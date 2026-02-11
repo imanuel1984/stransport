@@ -1,0 +1,25 @@
+{% extends "stransport/layout.html" %}
+{% load static %}
+
+{% block title %}טריוויה חכם בזמן המתנה{% endblock %}
+
+{% block content %}
+<div class="trivia-shell">
+  <div class="trivia-header">
+    <div>
+      <h1 class="page-title">🎮 טריוויה חכם בזמן המתנה</h1>
+      <p class="subtitle">בחר נושא, ענה על שאלות, וקבל הכוונה מהצ’אט.</p>
+    </div>
+
+    <div class="header-actions">
+      <a class="btn ghost" href="/">⬅ חזרה לבית</a>
+    </div>
+  </div>
+
+  <!-- כל המסכים (נושאים/שאלה/צ'אט) נבנים בתוך זה ע"י JS -->
+  <div id="trivia-app"></div>
+</div>
+
+<link rel="stylesheet" href="{% static 'trivia/trivia.css' %}">
+<script defer src="{% static 'trivia/trivia.js' %}"></script>
+{% endblock %}

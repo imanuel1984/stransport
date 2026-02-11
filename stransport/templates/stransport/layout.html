@@ -1,0 +1,51 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}מערכת הסעות{% endblock %}</title>
+
+  <link rel="stylesheet" href="{% static 'stransport/stransport.css' %}">
+  <script>
+    window.currentUserRole = "{{ current_user.profile.role|default:'' }}";
+    window.currentUserId = "{{ current_user.id|default:'' }}";
+    window.currentUserUsername = "{{ current_user.username|escapejs }}";
+  </script>
+  <script src="{% static 'stransport/stransport.js' %}" defer></script>
+</head>
+<body>
+  <nav>
+    <div>
+      {% if current_user.is_authenticated %}
+        שלום, {{ current_user.username }} ({{ current_user.profile.get_role_display|default:"ללא תפקיד" }})
+      {% else %}
+        <a href="{% url 'login' %}">כניסה</a> | <a href="{% url 'signup' %}">הירשם</a>
+      {% endif %}
+    </div>
+    <div>
+      {% if current_user.is_authenticated %}
+        <form action="{% url 'logout' %}" method="post" style="display:inline;">
+          {% csrf_token %}
+          <button type="submit" class="button">יציאה</button>
+        </form>
+      {% endif %}
+    </div>
+  </nav>
+
+  <main>
+    {% block content %}{% endblock %}
+  </main>
+</body>
+  <footer class="app-footer" style="background:#f8fafc;padding:12px 16px;border-top:1px solid #e6eef8;">
+    <div style="max-width:980px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;direction:rtl;">
+      <div style="color:#475569;font-weight:700;">© {% now "Y" %} עמנואל גולובוק — כל הזכויות שמורות</div>
+
+      <div style="color:#475569;font-weight:700;">
+        <a href="/" style="color:#2563eb;text-decoration:none;margin-left:10px;">דף הבית</a>
+        <a href="/trivia/" style="color:#2563eb;text-decoration:none;margin-left:10px;">טריוויה</a>
+        <a href="mailto:imanuel1984@outlook.com" style="color:#2563eb;text-decoration:none;margin-left:10px;">צור קשר</a>
+      </div>
+    </div>
+  </footer>
+</html>

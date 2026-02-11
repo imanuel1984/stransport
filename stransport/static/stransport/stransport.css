@@ -1,0 +1,258 @@
+body {
+  font-family: system-ui, Arial, sans-serif;
+  background: #fafafa;
+  margin: 0;
+  padding: 0;
+  color: #222;
+  direction: rtl;
+  text-align: right;
+}
+
+nav {
+  background: #1565c0;
+  color: white;
+  padding: 10px 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+nav a {
+  color: #fff;
+  text-decoration: underline;
+  margin: 0 5px;
+}
+
+main {
+  max-width: 800px;
+  margin: 30px auto;
+  background: #fff;
+  border-radius: 12px;
+  padding: 24px;
+  box-shadow: 0 3px 10px rgba(0,0,0,0.1);
+}
+
+.page-title {
+  text-align: center;
+  margin-top: 0;
+  color: #1565c0;
+}
+
+/* ---------- Buttons ---------- */
+.button,
+.new-request-btn,
+.accept-btn,
+.btn-primary,
+button[type="submit"] {
+  background: #1565c0;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 8px 14px;
+  cursor: pointer;
+  transition: background 0.2s;
+  margin: 4px;
+  font-size: 1em;
+  font-weight: 500;
+}
+
+.button:hover,
+.new-request-btn:hover,
+.accept-btn:hover,
+.btn-primary:hover,
+button[type="submit"]:hover {
+  background: #0d47a1;
+}
+
+.accept-btn {
+  background: #2e7d32;
+}
+.accept-btn:hover {
+  background: #1b5e20;
+}
+
+.request-card button {
+  margin-top: 8px;
+}
+
+/* ---------- Request Cards ---------- */
+.request-card {
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin-bottom: 10px;
+  background: #fff;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+  text-align: right;
+}
+
+.request-card.open {
+  border-left: 5px solid #42a5f5;
+}
+.request-card.accepted {
+  border-left: 5px solid #66bb6a;
+}
+.request-card.closed {
+  border-left: 5px solid #9e9e9e;
+}
+
+/* ---------- Text ---------- */
+.route {
+  font-weight: bold;
+  font-size: 1.1em;
+  color: #0d47a1;
+}
+
+.status {
+  color: #555;
+  margin-top: 2px;
+}
+
+.volunteer-info {
+  background: #f1f8e9;
+  padding: 6px;
+  border-radius: 5px;
+  font-size: 0.95em;
+  margin-top: 8px;
+}
+
+/* when no volunteers available */
+.request-card .volunteer-info.no-volunteers {
+  background: #fff3e0;
+  color: #bf360c;
+  font-weight: bold;
+  border-left: 3px solid #ff9800;
+}
+
+/* ---------- Messages ---------- */
+.no-requests {
+  text-align: center;
+  color: #777;
+  font-style: italic;
+  margin-top: 20px;
+}
+
+/* ---------- Form ---------- */
+form input, form textarea, form select {
+  width: 100%;
+  padding: 8px;
+  margin: 6px 0;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+}
+
+form button {
+  width: 100%;
+  margin-top: 8px;
+}
+
+.panel {
+  margin-top: 16px;
+}
+
+/* ---------- Alert animation for OPEN requests ---------- */
+@keyframes alertPulse {
+  0% {
+    background-color: #ffffff;
+    box-shadow: 0 0 0 rgba(244, 67, 54, 0);
+  }
+  50% {
+    background-color: #ffebee;
+    box-shadow: 0 0 10px rgba(244, 67, 54, 0.4);
+  }
+  100% {
+    background-color: #ffffff;
+    box-shadow: 0 0 0 rgba(244, 67, 54, 0);
+  }
+}
+
+.request-card.open {
+  border-left: 5px solid #f44336;
+  animation: alertPulse 2s infinite;
+  transition: background-color 0.3s, box-shadow 0.3s;
+}
+
+body.volunteer .request-card.open {
+  animation: alertPulse 1.5s infinite;
+}
+
+.request-card.open:hover {
+  animation-play-state: paused;
+}
+
+#login-btn {
+  background: #1565c0;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 8px 14px;
+  cursor: pointer;
+  transition: background 0.2s;
+  font-size: 1em;
+  font-weight: 500;
+}
+
+#login-btn:hover {
+  background: #0d47a1;
+}
+
+/* ✅ Anti-Jump: keep height stable */
+#requests-container,
+#closed-requests-container,
+#accepted-requests-container {
+  min-height: 520px;
+  scrollbar-gutter: stable;
+}
+
+.panel-visible {
+  opacity: 1;
+  max-height: 5000px;
+  transition: opacity .16s ease, max-height .16s ease;
+  overflow: visible;
+  pointer-events: auto;
+}
+
+.panel-hidden {
+  opacity: 0;
+  max-height: 0;
+  transition: opacity .12s ease, max-height .12s ease;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.request-card {
+  will-change: transform, opacity;
+}
+
+/* ✅ remove underline from trivia "button link" */
+a.button {
+  text-decoration: none !important;
+}
+a.button:hover {
+  text-decoration: none !important;
+}
+/* ===== Smooth panels (NO display none/block) ===== */
+#requests-container,
+#closed-requests-container,
+#accepted-requests-container{
+  scrollbar-gutter: stable;
+}
+
+/* רק הפאנל הפעיל מחזיק מקום */
+.panel-visible{
+  opacity: 1;
+  max-height: 5000px;
+  min-height: 420px;           /* ✅ כאן יציבות */
+  overflow: visible;
+  pointer-events: auto;
+  transition: opacity .16s ease, max-height .16s ease;
+}
+
+.panel-hidden{
+  opacity: 0;
+  max-height: 0;
+  min-height: 0 !important;    /* ✅ האחרים לא תופסים מקום */
+  overflow: hidden;
+  pointer-events: none;
+  transition: opacity .12s ease, max-height .12s ease;
+}

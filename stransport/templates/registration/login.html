@@ -1,0 +1,42 @@
+{% extends "stransport/layout.html" %}
+
+{% block title %}כניסה{% endblock %}
+
+{% block content %}
+<section class="welcome-card" style="margin: 16px 0;">
+  <h1 class="page-title" style="margin: 0 0 8px;">🚌 ברוכים הבאים למערכת ההסעות</h1>
+
+  <p style="margin: 0 0 12px; font-weight: 700; color: #334155;">
+    מערכת זו נועדה לחבר בין <b>מטופלים הזקוקים להסעה</b> לבין <b>מתנדבים טובי לב</b>,
+    בצורה פשוטה, מהירה ומכבדת.
+  </p>
+
+  <ul style="margin: 0 0 12px; padding-right: 18px; color: #111827; font-weight: 700;">
+    <li>📝 להגיש בקשת הסעה בקלות</li>
+    <li>🤝 להתאים מתנדב פנוי לבקשה</li>
+    <li>⏱️ לעקוב אחרי סטטוס הבקשה בזמן אמת</li>
+    <li>🎮 להעביר את זמן ההמתנה עם טריוויה חכמה ולימודית</li>
+  </ul>
+
+  <p style="margin: 0; color: #475569; font-weight: 700;">
+  
+    המטרה שלנו היא להפוך את תהליך ההסעה ל<b>נגיש, אנושי ויעיל</b> — ולחבר אנשים דרך עשייה טובה.
+<p style="margin: 0; color: #475569; font-weight: 700;">
+   <br> אז קדימה מי שבדרך ועל הדרך רוצה לעשות טוב למטופלים שירשם!
+    <p style="margin: 0; color: #475569; font-weight: 700;">
+<br> כמובן לכל המטופלים הצריכים עזרה להסיעם לטיפול רפואי הרשמו ונשמח לעזור! 
+</p>
+
+</section>
+
+<h2>כניסה</h2>
+<form method="post">
+    {% csrf_token %}
+    <label>שם משתמש:</label>
+    <input type="text" name="username" required><br>
+    <label>סיסמא:</label>
+    <input type="password" name="password" required><br>
+    <button type="submit" id="login-btn">כניסה</button>
+</form>
+<p>אין לך חשבון? <a href="{% url 'signup' %}">הירשם</a></p>
+{% endblock %}
