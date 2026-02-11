@@ -1,0 +1,15 @@
+# --- Core Dependencies ---
+Django==5.2.4
+markdown2==2.5.0
+
+# --- Production Server ---
+gunicorn==21.2.0
+whitenoise==6.6.0
+
+# --- API Requests ---
+requests==2.31.0
+
+# --- Optional Utilities (Django dependencies) ---
+pytz>=2024.1
+sqlparse>=0.5.0
+asgiref>=3.8.1
