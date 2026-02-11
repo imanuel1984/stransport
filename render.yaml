@@ -3,7 +3,7 @@ services:
     name: stransport
     runtime: python
     buildCommand: pip install -r requirements.txt && python manage.py migrate && python manage.py collectstatic --noinput
-    startCommand: gunicorn --bind 0.0.0.0:$PORT --workers 2 service.wsgi:application
+    startCommand: python manage.py migrate && gunicorn --bind 0.0.0.0:$PORT --workers 2 service.wsgi:application
     envVars:
       - key: DEBUG
         value: "False"
