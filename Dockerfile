@@ -20,8 +20,8 @@ RUN apt-get update && apt-get install -y \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Install additional production dependencies
-RUN pip install --no-cache-dir gunicorn whitenoise requests
+# Install additional production dependencies (if not already in requirements.txt)
+RUN pip install --no-cache-dir gunicorn 2>/dev/null || true
 
 # Copy project files
 COPY . .
