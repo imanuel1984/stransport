@@ -24,3 +24,6 @@ channels-redis==4.2.0
 pytz>=2024.1
 sqlparse>=0.5.0
 asgiref>=3.8.1
+
+# --- Local env loading ---
+python-dotenv==1.0.1
