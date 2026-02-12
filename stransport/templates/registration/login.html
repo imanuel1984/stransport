@@ -30,6 +30,12 @@
 </section>
 
 <h2>כניסה</h2>
+{% if form.errors %}
+<div class="panel" style="border:1px solid #ef4444;background:#fef2f2;padding:12px;border-radius:8px;margin:12px 0;">
+  <strong>יש שגיאה בהתחברות:</strong>
+  {{ form.errors }}
+</div>
+{% endif %}
 <form method="post">
     {% csrf_token %}
     <label>שם משתמש:</label>
