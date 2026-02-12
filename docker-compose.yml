@@ -16,6 +16,7 @@ services:
     depends_on:
       - db
       - rabbitmq
+      - redis
 
   db:
     image: postgres:16-alpine
@@ -34,6 +35,12 @@ services:
       - "5672:5672"
       - "15672:15672"
 
+  redis:
+    image: redis:7-alpine
+    container_name: stransport-redis
+    ports:
+      - "6379:6379"
+
   celery_worker:
     build: .
     container_name: stransport-celery-worker
@@ -47,6 +54,7 @@ services:
     depends_on:
       - db
       - rabbitmq
+      - redis
 
   celery_beat:
     build: .
@@ -61,6 +69,7 @@ services:
     depends_on:
       - db
       - rabbitmq
+      - redis
 
 volumes:
   db_data:

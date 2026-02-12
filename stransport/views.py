@@ -8,6 +8,8 @@ from django.views.decorators.csrf import csrf_exempt
 from django.db import models
 from django.utils.dateparse import parse_datetime
 from django.contrib.auth.models import User
+from asgiref.sync import async_to_sync
+from channels.layers import get_channel_layer
 from .models import TransportRequest, TransportAssignment, Profile, TransportRejection
 from .tasks import notify_new_request
 import json
@@ -108,6 +110,23 @@ def serialize_request(r):
     }
 
 
+def broadcast_request_event(event, request_obj, notify_volunteers=True, notify_patient=True):
+    channel_layer = get_channel_layer()
+    if not channel_layer:
+        return
+
+    payload = {
+        "type": "request.event",
+        "event": event,
+        "request": serialize_request(request_obj),
+    }
+
+    if notify_volunteers:
+        async_to_sync(channel_layer.group_send)("volunteers", payload)
+    if notify_patient:
+        async_to_sync(channel_layer.group_send)(f"patient_{request_obj.sick_id}", payload)
+
+
 # --- API: OPEN REQUESTS ---
 @login_required_json
 def requests_api(request):
@@ -161,6 +180,7 @@ def create_request_api(request):
             notes=notes,
         )
         notify_new_request.delay(r.id)
+        broadcast_request_event("request_created", r)
         return JsonResponse({"success": True, "id": r.id})
     except Exception as e:
         return JsonResponse({"error": str(e)}, status=500)
@@ -180,6 +200,7 @@ def accept_request_api(request, req_id):
         ride_request.status = "accepted"
         ride_request.save()
         TransportRejection.objects.filter(request=ride_request).delete()
+        broadcast_request_event("request_accepted", ride_request)
         return JsonResponse({"success": True})
     except Exception as e:
         return JsonResponse({"error": str(e)}, status=500)
@@ -216,6 +237,8 @@ def reject_request_api(request, req_id):
             ride_request.cancel_reason = "no_volunteers"
             ride_request.save()
 
+        broadcast_request_event("request_rejected", ride_request)
+
         return JsonResponse({"success": True})
     except Exception as e:
         return JsonResponse({"error": str(e)}, status=500)
@@ -234,6 +257,7 @@ def cancel_request_api(request, req_id):
         ride_request.status = "cancelled"
         ride_request.cancel_reason = "patient_cancelled"
         ride_request.save()
+        broadcast_request_event("request_cancelled", ride_request)
         return JsonResponse({"success": True})
     except Exception as e:
         return JsonResponse({"error": str(e)}, status=500)

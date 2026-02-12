@@ -156,6 +156,10 @@ function hidePanel(el) {
     }
   }
 
+  function isVisible(el) {
+    return el && !el.classList.contains('panel-hidden');
+  }
+
   async function loadClosedRequests() {
     if (!closedContainer) return;
 
@@ -284,6 +288,61 @@ function hidePanel(el) {
     }
   }
 
+  function refreshFromEvent() {
+    loadOpenRequests();
+    if (role === 'sick' && isVisible(closedContainer)) {
+      loadClosedRequests();
+    }
+    if (role === 'volunteer' && isVisible(acceptedContainer)) {
+      loadAcceptedRequests();
+    }
+  }
+
+  function connectRealtime() {
+    if (!role) return;
+
+    const wsScheme = window.location.protocol === 'https:' ? 'wss' : 'ws';
+    const wsUrl = `${wsScheme}://${window.location.host}/ws/requests/`;
+    let socket;
+    let reconnectTimer;
+
+    const connect = () => {
+      socket = new WebSocket(wsUrl);
+
+      socket.onmessage = event => {
+        try {
+          const payload = JSON.parse(event.data || '{}');
+          if (payload && payload.event) {
+            refreshFromEvent();
+          }
+        } catch (err) {
+          console.error('WS parse error', err);
+        }
+      };
+
+      socket.onclose = () => {
+        reconnectTimer = setTimeout(connect, 2000);
+      };
+
+      socket.onerror = () => {
+        if (socket && socket.readyState !== WebSocket.CLOSED) {
+          socket.close();
+        }
+      };
+    };
+
+    connect();
+
+    window.addEventListener('beforeunload', () => {
+      if (reconnectTimer) {
+        clearTimeout(reconnectTimer);
+      }
+      if (socket && socket.readyState === WebSocket.OPEN) {
+        socket.close();
+      }
+    });
+  }
+
   if (showClosedBtn) {
     showClosedBtn.onclick = async () => {
       await loadClosedRequests();
@@ -352,5 +411,6 @@ function hidePanel(el) {
     };
   }
 
+  connectRealtime();
   loadOpenRequests();
 });

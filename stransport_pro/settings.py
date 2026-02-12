@@ -48,6 +48,7 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'channels',
     'stransport',
     'trivia',
 ]
@@ -84,6 +85,7 @@ TEMPLATES = [
 
 
 WSGI_APPLICATION = 'stransport_pro.wsgi.application'
+ASGI_APPLICATION = "stransport_pro.asgi.application"
 
 
 # Database
@@ -172,6 +174,17 @@ USE_TZ = True
 STATIC_URL = "/static/"
 STATIC_ROOT = os.environ.get("STATIC_ROOT", str(BASE_DIR / "staticfiles"))
 STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
+
+# Channels (WebSockets)
+REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
+CHANNEL_LAYERS = {
+    "default": {
+        "BACKEND": "channels_redis.core.RedisChannelLayer",
+        "CONFIG": {
+            "hosts": [REDIS_URL],
+        },
+    }
+}
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
