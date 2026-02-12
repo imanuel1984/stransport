@@ -5,4 +5,4 @@ from django.shortcuts import render
 @login_required
 @ensure_csrf_cookie
 def index(request):
-    return render(request, "trivia/index.html")
+    return render(request, "trivia/index.html", {"current_user": request.user})
