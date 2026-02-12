@@ -97,7 +97,11 @@ def serialize_request(r):
         "sick_id": r.sick.id,
         "sick_username": r.sick.username,
         "pickup": r.pickup_address,
+        "pickup_lat": r.pickup_lat,
+        "pickup_lng": r.pickup_lng,
         "destination": r.destination,
+        "dest_lat": r.dest_lat,
+        "dest_lng": r.dest_lng,
         "requested_time": r.requested_time.strftime("%Y-%m-%d %H:%M"),
         "status": r.status,
         "status_display": r.get_status_display(),
@@ -108,6 +112,15 @@ def serialize_request(r):
         "no_volunteers_available": r.no_volunteers_available,
         "cancel_reason": r.cancel_reason,
     }
+
+
+def parse_optional_float(value):
+    if value is None or value == "":
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def broadcast_request_event(event, request_obj, notify_volunteers=True, notify_patient=True):
@@ -162,6 +175,10 @@ def create_request_api(request):
         time_str = data.get("time")
         notes = data.get("notes", "")
         phone = data.get("phone", "")
+        pickup_lat = parse_optional_float(data.get("pickup_lat"))
+        pickup_lng = parse_optional_float(data.get("pickup_lng"))
+        dest_lat = parse_optional_float(data.get("dest_lat"))
+        dest_lng = parse_optional_float(data.get("dest_lng"))
         requested_time = parse_datetime(time_str)
 
         if not all([pickup, destination, requested_time]):
@@ -175,7 +192,11 @@ def create_request_api(request):
         r = TransportRequest.objects.create(
             sick=request.user,
             pickup_address=pickup,
+            pickup_lat=pickup_lat,
+            pickup_lng=pickup_lng,
             destination=destination,
+            dest_lat=dest_lat,
+            dest_lng=dest_lng,
             requested_time=requested_time,
             notes=notes,
         )

@@ -25,7 +25,11 @@ class TransportRequest(models.Model):
 
     sick = models.ForeignKey(User, on_delete=models.CASCADE, related_name="requests")
     pickup_address = models.CharField(max_length=255)
+    pickup_lat = models.FloatField(null=True, blank=True)
+    pickup_lng = models.FloatField(null=True, blank=True)
     destination = models.CharField(max_length=255)
+    dest_lat = models.FloatField(null=True, blank=True)
+    dest_lng = models.FloatField(null=True, blank=True)
     requested_time = models.DateTimeField()
     notes = models.TextField(blank=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="open")

@@ -361,3 +361,10 @@ a.button:hover {
   pointer-events: none;
   transition: opacity .12s ease, max-height .12s ease;
 }
+
+.requests-map {
+  height: 320px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  margin: 12px 0 16px;
+}

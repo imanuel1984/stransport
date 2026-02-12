@@ -28,6 +28,9 @@ document.addEventListener('DOMContentLoaded', () => {
   const showAcceptedBtn = document.getElementById('show-accepted-btn');
   const showOpenBtns = document.querySelectorAll('#show-open-btn');
   const role = window.currentUserRole || '';
+  const mapEl = document.getElementById('requests-map');
+  let map = null;
+  let markersLayer = null;
 
   function formatRoute(pickup, destination) {
     const isRtl = (document.documentElement.dir || '').toLowerCase() === 'rtl';
@@ -54,6 +57,39 @@ function hidePanel(el) {
   hidePanel(closedContainer);
   hidePanel(acceptedContainer);
   
+  function initMap() {
+    if (!mapEl || !window.L || map) return;
+
+    map = L.map(mapEl).setView([32.0853, 34.7818], 10);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap contributors',
+      maxZoom: 18,
+    }).addTo(map);
+
+    markersLayer = L.layerGroup().addTo(map);
+  }
+
+  function updateMapMarkers(requests) {
+    if (!map || !markersLayer) return;
+
+    markersLayer.clearLayers();
+    const points = [];
+
+    requests.forEach(r => {
+      const lat = Number(r.pickup_lat);
+      const lng = Number(r.pickup_lng);
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+
+      const marker = L.marker([lat, lng]);
+      marker.bindPopup(`${formatRoute(r.pickup, r.destination)}<br>${r.requested_time}`);
+      marker.addTo(markersLayer);
+      points.push([lat, lng]);
+    });
+
+    if (points.length > 0) {
+      map.fitBounds(points, { padding: [20, 20] });
+    }
+  }
 
   async function loadOpenRequests() {
     if (!requestsContainer) return;
@@ -150,6 +186,11 @@ function hidePanel(el) {
 
         requestsContainer.appendChild(card);
       });
+
+      if (role === 'volunteer') {
+        initMap();
+        updateMapMarkers(reqs);
+      }
     } catch (err) {
       console.error(err);
       requestsContainer.innerHTML = '<p class="no-requests">בעיית תקשורת.</p>';
@@ -384,6 +425,10 @@ function hidePanel(el) {
         time: createForm.querySelector('[name=time]').value,
         notes: createForm.querySelector('[name=notes]').value,
         phone: createForm.querySelector('[name=phone]').value,
+        pickup_lat: createForm.querySelector('[name=pickup_lat]').value,
+        pickup_lng: createForm.querySelector('[name=pickup_lng]').value,
+        dest_lat: createForm.querySelector('[name=dest_lat]').value,
+        dest_lng: createForm.querySelector('[name=dest_lng]').value,
       };
 
       try {
@@ -411,6 +456,9 @@ function hidePanel(el) {
     };
   }
 
+  if (role === 'volunteer') {
+    initMap();
+  }
   connectRealtime();
   loadOpenRequests();
 });

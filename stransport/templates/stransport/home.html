@@ -17,6 +17,10 @@
     <input type="datetime-local" name="time" required>
     <input type="text" name="notes" placeholder="הערות">
     <input type="text" name="phone" placeholder="מספר טלפון" required>
+    <input type="number" name="pickup_lat" step="any" placeholder="קו רוחב איסוף (אופציונלי)">
+    <input type="number" name="pickup_lng" step="any" placeholder="קו אורך איסוף (אופציונלי)">
+    <input type="number" name="dest_lat" step="any" placeholder="קו רוחב יעד (אופציונלי)">
+    <input type="number" name="dest_lng" step="any" placeholder="קו אורך יעד (אופציונלי)">
     <button type="submit" class="new-request-btn">ליצור בקשה</button>
   </form>
 
@@ -37,6 +41,7 @@
     <button id="show-accepted-btn" class="button">להראות בקשות מאושרות שלי</button>
     <button id="show-open-btn" class="button" style="display:none;">חזרה לבקשות פתוחות</button>
   </div>
+  <div id="requests-map" class="requests-map"></div>
   <div id="requests-container"></div>
   <div id="accepted-requests-container" style="display:none;"></div>
 </div>
