@@ -29,6 +29,12 @@ document.addEventListener('DOMContentLoaded', () => {
   const showOpenBtns = document.querySelectorAll('#show-open-btn');
   const role = window.currentUserRole || '';
 
+  function formatRoute(pickup, destination) {
+    const isRtl = (document.documentElement.dir || '').toLowerCase() === 'rtl';
+    const arrow = isRtl ? '←' : '→';
+    return `${pickup} ${arrow} ${destination}`;
+  }
+
   function showPanel(el) {
   if (!el) return;
   el.style.display = "block"; // נשאר block תמיד
@@ -88,7 +94,7 @@ function hidePanel(el) {
 
         card.innerHTML = `
           <div class="request-info">
-            <div class="route">${r.pickup} → ${r.destination}</div>
+            <div class="route">${formatRoute(r.pickup, r.destination)}</div>
             <div class="status">${r.requested_time} · ${r.status_display}</div>
             <div style="margin-top:6px">הערות: ${r.notes || '-'}</div>
             <div style="margin-top:6px">טלפון מטופל: ${r.phone || '-'}</div>
@@ -191,7 +197,7 @@ function hidePanel(el) {
 
         div.innerHTML = `
           <div class="request-info">
-            <div class="route">${r.pickup} → ${r.destination}</div>
+            <div class="route">${formatRoute(r.pickup, r.destination)}</div>
             <div class="status">${r.requested_time} · ${r.status_label || r.status_display}</div>
             <div style="margin-top:6px">הערות: ${r.notes || '-'}</div>
             <div style="margin-top:6px">מתנדב: ${
@@ -250,7 +256,7 @@ function hidePanel(el) {
         div.className = 'request-card accepted';
         div.innerHTML = `
           <div class="request-info">
-            <div class="route">${r.pickup} → ${r.destination}</div>
+            <div class="route">${formatRoute(r.pickup, r.destination)}</div>
             <div class="status">${r.requested_time} · ${r.status_display}</div>
             <div style="margin-top:6px">מטופל: ${r.sick_username} · ${r.phone || '-'}</div>
             <div style="margin-top:6px">הערות: ${r.notes || '-'}</div>
