@@ -5,7 +5,8 @@ FROM python:3.11-slim
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    DJANGO_SETTINGS_MODULE=stransport_pro.settings
 
 # Set work directory
 WORKDIR /app
@@ -20,14 +21,11 @@ RUN apt-get update && apt-get install -y \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Install additional production dependencies (if not already in requirements.txt)
-RUN pip install --no-cache-dir gunicorn 2>/dev/null || true
-
 # Copy project files
 COPY . .
 
 # Collect static files
-RUN python manage.py collectstatic --noinput || true
+RUN python manage.py collectstatic --noinput
 
 # Create a non-root user
 RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
@@ -35,10 +33,6 @@ USER appuser
 
 # Expose port
 EXPOSE 8000
-
-# Health check
-HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
-    CMD python -c "import requests; requests.get('http://localhost:8000/', timeout=2)" || exit 1
 
 # Run migrations on startup, then gunicorn
 CMD ["/bin/sh", "-c", "python manage.py migrate && gunicorn --bind 0.0.0.0:8000 --workers 3 --timeout 60 stransport_pro.wsgi:application"]
