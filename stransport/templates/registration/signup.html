@@ -35,17 +35,72 @@
   {{ form.password2 }}
 
   <label>תפקיד</label>
-  <div class="role-select-wrap">
-    <select name="role" class="role-select" required>
-      <option value="">בחר תפקיד…</option>
-      <option value="sick">מטופל</option>
-      <option value="volunteer">מתנדב</option>
-    </select>
+  <div class="role-dd" id="roleDD" tabindex="0">
+    <button type="button" class="role-dd-trigger" aria-haspopup="listbox" aria-expanded="false">
+      <span class="role-dd-label" id="roleLabel">בחר תפקיד…</span>
+      <span class="role-dd-caret">▾</span>
+    </button>
+    <div class="role-dd-menu" role="listbox">
+      <div class="role-dd-item" role="option" data-value="sick">מטופל</div>
+      <div class="role-dd-item" role="option" data-value="volunteer">מתנדב</div>
+    </div>
   </div>
+  <select name="role" id="roleSelect" class="role-select-hidden" required>
+    <option value="">בחר תפקיד…</option>
+    <option value="sick">מטופל</option>
+    <option value="volunteer">מתנדב</option>
+  </select>
 
   <button type="submit" class="btn-primary">צור חשבון</button>
 
 </form>
 
 <p>כבר רשום? <a href="{% url 'login' %}">התחברות</a></p>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+(() => {
+  const dd = document.getElementById("roleDD");
+  const select = document.getElementById("roleSelect");
+  if (!dd || !select) return;
+
+  const trigger = dd.querySelector(".role-dd-trigger");
+  const label = dd.querySelector(".role-dd-label");
+  const items = [...dd.querySelectorAll(".role-dd-item")];
+
+  function openDD() {
+    dd.classList.add("open");
+    trigger.setAttribute("aria-expanded", "true");
+  }
+
+  function closeDD() {
+    dd.classList.remove("open");
+    trigger.setAttribute("aria-expanded", "false");
+  }
+
+  trigger.addEventListener("click", e => {
+    e.preventDefault();
+    e.stopPropagation();
+    dd.classList.contains("open") ? closeDD() : openDD();
+  });
+
+  items.forEach(item => {
+    item.addEventListener("click", e => {
+      e.stopPropagation();
+      const value = item.dataset.value;
+      select.value = value;
+      label.textContent = item.textContent.trim();
+      items.forEach(i => i.classList.remove("active"));
+      item.classList.add("active");
+      closeDD();
+    });
+  });
+
+  document.addEventListener("click", closeDD);
+  dd.addEventListener("keydown", e => {
+    if (e.key === "Escape") closeDD();
+  });
+})();
+</script>
 {% endblock %}
