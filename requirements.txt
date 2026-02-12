@@ -13,6 +13,9 @@ requests==2.31.0
 dj-database-url==2.2.0
 psycopg[binary]==3.2.9
 
+# --- Background Jobs ---
+celery==5.4.0
+
 # --- Optional Utilities (Django dependencies) ---
 pytz>=2024.1
 sqlparse>=0.5.0

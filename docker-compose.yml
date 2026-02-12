@@ -34,5 +34,33 @@ services:
       - "5672:5672"
       - "15672:15672"
 
+  celery_worker:
+    build: .
+    container_name: stransport-celery-worker
+    command: celery -A stransport_pro worker -l info
+    env_file:
+      - .env.example
+    environment:
+      - DJANGO_SETTINGS_MODULE=stransport_pro.settings
+    volumes:
+      - .:/app
+    depends_on:
+      - db
+      - rabbitmq
+
+  celery_beat:
+    build: .
+    container_name: stransport-celery-beat
+    command: celery -A stransport_pro beat -l info
+    env_file:
+      - .env.example
+    environment:
+      - DJANGO_SETTINGS_MODULE=stransport_pro.settings
+    volumes:
+      - .:/app
+    depends_on:
+      - db
+      - rabbitmq
+
 volumes:
   db_data:

@@ -13,6 +13,7 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 from pathlib import Path
 import os
 import dj_database_url
+from celery.schedules import crontab
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -178,6 +179,21 @@ STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 LOGIN_REDIRECT_URL = "/"   # after login go to homepage
 LOGOUT_REDIRECT_URL = "/"  # after logout redirect
+
+# Celery
+CELERY_BROKER_URL = os.environ.get("RABBITMQ_URL", "amqp://guest:guest@localhost:5672//")
+CELERY_RESULT_BACKEND = os.environ.get("CELERY_RESULT_BACKEND", "rpc://")
+CELERY_ACCEPT_CONTENT = ["json"]
+CELERY_TASK_SERIALIZER = "json"
+CELERY_RESULT_SERIALIZER = "json"
+CELERY_TIMEZONE = TIME_ZONE
+STALE_REQUEST_MINUTES = int(os.environ.get("STALE_REQUEST_MINUTES", "30"))
+CELERY_BEAT_SCHEDULE = {
+    "auto-cancel-stale-requests": {
+        "task": "stransport.tasks.auto_cancel_stale_requests",
+        "schedule": crontab(minute="*/5"),
+    }
+}
 
 # CSRF & Security
 CSRF_TRUSTED_ORIGINS = [

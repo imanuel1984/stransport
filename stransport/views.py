@@ -9,6 +9,7 @@ from django.db import models
 from django.utils.dateparse import parse_datetime
 from django.contrib.auth.models import User
 from .models import TransportRequest, TransportAssignment, Profile, TransportRejection
+from .tasks import notify_new_request
 import json
 
 
@@ -103,6 +104,7 @@ def serialize_request(r):
         "phone": getattr(r.sick.profile, "phone", ""),
         "volunteer": volunteer_info,
         "no_volunteers_available": r.no_volunteers_available,
+        "cancel_reason": r.cancel_reason,
     }
 
 
@@ -158,6 +160,7 @@ def create_request_api(request):
             requested_time=requested_time,
             notes=notes,
         )
+        notify_new_request.delay(r.id)
         return JsonResponse({"success": True, "id": r.id})
     except Exception as e:
         return JsonResponse({"error": str(e)}, status=500)
@@ -210,6 +213,7 @@ def reject_request_api(request, req_id):
         if total_volunteers > 0 and rejected_count >= total_volunteers:
             ride_request.no_volunteers_available = True
             ride_request.status = "cancelled"
+            ride_request.cancel_reason = "no_volunteers"
             ride_request.save()
 
         return JsonResponse({"success": True})
@@ -228,6 +232,7 @@ def cancel_request_api(request, req_id):
             return JsonResponse({"error": "Only sick users can cancel"}, status=403)
         ride_request = get_object_or_404(TransportRequest, id=req_id, sick=request.user, status="open")
         ride_request.status = "cancelled"
+        ride_request.cancel_reason = "patient_cancelled"
         ride_request.save()
         return JsonResponse({"success": True})
     except Exception as e:
