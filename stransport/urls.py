@@ -12,5 +12,6 @@ urlpatterns = [
     path("api/requests/accepted/", views.accepted_requests_api, name="accepted_requests_api"),
     path("api/requests/closed/", views.closed_requests_api, name="closed_requests_api"),
     path("api/requests/delete/<int:req_id>/", views.delete_request_api, name="delete_request_api"),
+    path("api/requests/summary/<int:req_id>/", views.generate_summary_api, name="generate_summary_api"),
 
 ]

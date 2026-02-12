@@ -26,3 +26,26 @@ def auto_cancel_stale_requests():
     if updated:
         logger.info("Auto-cancelled %s stale requests", updated)
     return updated
+
+
+@shared_task
+def generate_ai_summary(request_id):
+    try:
+        req = TransportRequest.objects.get(id=request_id)
+    except TransportRequest.DoesNotExist:
+        return None
+
+    notes = (req.notes or "").strip()
+    api_key = getattr(settings, "AI_API_KEY", "")
+
+    if not notes:
+        summary = "No notes to summarize."
+    elif not api_key:
+        summary = f"Summary unavailable (set AI_API_KEY). Notes: {notes[:200]}"
+    else:
+        summary = f"Stub summary: {notes[:200]}"
+
+    req.ai_summary = summary
+    req.save(update_fields=["ai_summary"])
+    logger.info("Generated AI summary for request %s", request_id)
+    return summary

@@ -11,7 +11,7 @@ from django.contrib.auth.models import User
 from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
 from .models import TransportRequest, TransportAssignment, Profile, TransportRejection
-from .tasks import notify_new_request
+from .tasks import notify_new_request, generate_ai_summary
 import json
 
 
@@ -111,6 +111,7 @@ def serialize_request(r):
         "volunteer": volunteer_info,
         "no_volunteers_available": r.no_volunteers_available,
         "cancel_reason": r.cancel_reason,
+        "ai_summary": r.ai_summary,
     }
 
 
@@ -336,6 +337,22 @@ def delete_request_api(request, req_id):
             ).delete()
         else:
             return JsonResponse({"error": "Unauthorized"}, status=403)
+        return JsonResponse({"success": True})
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
+
+
+# --- API: GENERATE AI SUMMARY ---
+@csrf_exempt
+@login_required_json
+def generate_summary_api(request, req_id):
+    if request.method != "POST":
+        return JsonResponse({"error": "Invalid request"}, status=400)
+    try:
+        if request.user.profile.role != "sick":
+            return JsonResponse({"error": "Only sick users can summarize"}, status=403)
+        ride_request = get_object_or_404(TransportRequest, id=req_id, sick=request.user)
+        generate_ai_summary.delay(ride_request.id)
         return JsonResponse({"success": True})
     except Exception as e:
         return JsonResponse({"error": str(e)}, status=500)

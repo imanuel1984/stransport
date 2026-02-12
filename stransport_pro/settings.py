@@ -208,6 +208,9 @@ CELERY_BEAT_SCHEDULE = {
     }
 }
 
+# AI (optional)
+AI_API_KEY = os.environ.get("AI_API_KEY", "")
+
 # CSRF & Security
 CSRF_TRUSTED_ORIGINS = [
     origin
