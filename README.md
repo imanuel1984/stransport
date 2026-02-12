@@ -16,6 +16,14 @@ This project applies core concepts learned throughout CS50x, including algorithm
 
 The application implements a two-sided workflow with a clear request lifecycle (open → accepted → done / cancelled). If all volunteers reject a request, the system automatically cancels it and records that no volunteers were available, allowing the patient to clearly understand why the request was closed.
 
+Production-grade upgrades
+
+- Postgres via `DATABASE_URL` / DB_* env vars (SQLite only for local dev)
+- Celery + RabbitMQ background tasks (stale auto-cancel, notifications)
+- Realtime updates over WebSockets (Channels + Redis)
+- Leaflet map with pickup markers for volunteers
+- Optional AI summary stub (no provider unless `AI_API_KEY` set)
+
 Distinctiveness and Complexity
 Distinctiveness
 
@@ -129,6 +137,37 @@ python manage.py runserver
 
 
 Visit: http://localhost:8000
+
+How to Run Locally with docker-compose (dev)
+
+1) Copy `.env.example` to `.env` and adjust values if needed
+2) Run:
+
+```bash
+docker-compose up --build
+```
+
+3) Apply migrations:
+
+```bash
+docker-compose exec web python manage.py migrate
+```
+
+Visit: http://localhost:8000
+
+How to Deploy (Render)
+
+Set these environment variables in Render:
+
+- `SECRET_KEY`
+- `DEBUG=False`
+- `ALLOWED_HOSTS=stransport-djm8.onrender.com,localhost,127.0.0.1`
+- `DATABASE_URL=postgresql://...` (existing Postgres)
+- `CSRF_TRUSTED_ORIGINS=https://<your-domain>`
+- `RABBITMQ_URL=amqp://...`
+- `REDIS_URL=redis://...`
+- `AI_API_KEY` (optional)
+- `GROQ_API_KEY` (optional, Trivia)
 
 Design Decisions
 

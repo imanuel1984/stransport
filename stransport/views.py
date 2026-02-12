@@ -4,15 +4,17 @@ from django.contrib.auth.decorators import login_required
 from django.contrib.auth import login
 from django.contrib.auth.forms import UserCreationForm
 from django.http import JsonResponse
-from django.views.decorators.csrf import csrf_exempt
 from django.db import models
 from django.utils.dateparse import parse_datetime
 from django.contrib.auth.models import User
 from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
+import logging
 from .models import TransportRequest, TransportAssignment, Profile, TransportRejection
 from .tasks import notify_new_request, generate_ai_summary
 import json
+
+logger = logging.getLogger(__name__)
 
 
 def login_required_json(view_func):
@@ -135,10 +137,13 @@ def broadcast_request_event(event, request_obj, notify_volunteers=True, notify_p
         "request": serialize_request(request_obj),
     }
 
-    if notify_volunteers:
-        async_to_sync(channel_layer.group_send)("volunteers", payload)
-    if notify_patient:
-        async_to_sync(channel_layer.group_send)(f"patient_{request_obj.sick_id}", payload)
+    try:
+        if notify_volunteers:
+            async_to_sync(channel_layer.group_send)("volunteers", payload)
+        if notify_patient:
+            async_to_sync(channel_layer.group_send)(f"patient_{request_obj.sick_id}", payload)
+    except Exception:
+        logger.warning("Failed to broadcast realtime event", exc_info=True)
 
 
 # --- API: OPEN REQUESTS ---
@@ -161,7 +166,6 @@ def requests_api(request):
 
 
 # --- API: CREATE REQUEST ---
-@csrf_exempt
 @login_required_json
 def create_request_api(request):
     if request.method != "POST":
@@ -209,7 +213,6 @@ def create_request_api(request):
 
 
 # --- API: ACCEPT REQUEST ---
-@csrf_exempt
 @login_required_json
 def accept_request_api(request, req_id):
     if request.method != "POST":
@@ -229,7 +232,6 @@ def accept_request_api(request, req_id):
 
 
 # --- API: REJECT REQUEST ---
-@csrf_exempt
 @login_required_json
 def reject_request_api(request, req_id):
     if request.method != "POST":
@@ -267,7 +269,6 @@ def reject_request_api(request, req_id):
 
 
 # --- API: CANCEL REQUEST ---
-@csrf_exempt
 @login_required_json
 def cancel_request_api(request, req_id):
     if request.method != "POST":
@@ -320,7 +321,6 @@ def closed_requests_api(request):
 
 
 # --- API: DELETE REQUEST ---
-@csrf_exempt
 @login_required_json
 def delete_request_api(request, req_id):
     if request.method != "POST":
@@ -343,7 +343,6 @@ def delete_request_api(request, req_id):
 
 
 # --- API: GENERATE AI SUMMARY ---
-@csrf_exempt
 @login_required_json
 def generate_summary_api(request, req_id):
     if request.method != "POST":

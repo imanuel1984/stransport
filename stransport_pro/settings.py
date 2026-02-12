@@ -211,6 +211,27 @@ CELERY_BEAT_SCHEDULE = {
 # AI (optional)
 AI_API_KEY = os.environ.get("AI_API_KEY", "")
 
+# Logging
+LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO")
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "handlers": {
+        "console": {"class": "logging.StreamHandler"},
+    },
+    "root": {
+        "handlers": ["console"],
+        "level": LOG_LEVEL,
+    },
+    "loggers": {
+        "django.request": {
+            "handlers": ["console"],
+            "level": "WARNING",
+            "propagate": False,
+        }
+    },
+}
+
 # CSRF & Security
 CSRF_TRUSTED_ORIGINS = [
     origin
