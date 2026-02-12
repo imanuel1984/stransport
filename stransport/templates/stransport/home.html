@@ -1,0 +1,52 @@
+{% extends "stransport/layout.html" %}
+{% block title %}מערכת הסעות{% endblock %}
+
+{% block content %}
+<h1 class="page-title">מערכת הסעות</h1>
+<a href="/trivia/" class="button" style="display:inline-block;margin:12px 0;">
+  🎮 טריויה חכמה בזמן ההמתנה
+</a>
+
+
+{% if current_user.profile.role == "sick" %}
+<div class="panel" id="sick-panel">
+  <form id="create-request-form">
+    <input type="hidden" name="csrfmiddlewaretoken" value="{{ csrf_token }}">
+    <input type="text" name="pickup" placeholder="כתובת איסוף" required>
+    <input type="text" name="destination" placeholder="יעד" required>
+    <input type="datetime-local" name="time" required>
+    <input type="text" name="notes" placeholder="הערות">
+    <input type="text" name="phone" placeholder="מספר טלפון" required>
+    <button type="submit" class="new-request-btn">ליצור בקשה</button>
+  </form>
+
+  <div style="margin-top:12px;">
+    <button id="show-closed-btn" class="button">להראות בקשות מבוטלות/סגורות</button>
+    <button id="show-open-btn" class="button" style="display:none;">חזרה לבקשות פתוחות</button>
+  </div>
+
+  <div id="requests-container" style="margin-top:14px;"></div>
+  <div id="closed-requests-container" style="margin-top:14px; display:none;"></div>
+</div>
+
+{% endif %}
+
+{% if current_user.profile.role == "volunteer" %}
+<div class="panel" id="volunteer-panel">
+  <div style="margin-bottom:12px;">
+    <button id="show-accepted-btn" class="button">להראות בקשות מאושרות שלי</button>
+    <button id="show-open-btn" class="button" style="display:none;">חזרה לבקשות פתוחות</button>
+  </div>
+  <div id="requests-container"></div>
+  <div id="accepted-requests-container" style="display:none;"></div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% load static %}
+<script src="{% static 'stransport/stransport.js' %}" defer></script>
+<script>
+window.currentUserRole = "{{ current_user.profile.role|default:'' }}";
+window.currentUserId = "{{ current_user.id|default:'' }}";
+window.currentUserUsername = "{{ current_user.username|escapejs }}";
+</script>
