@@ -35,11 +35,13 @@
   {{ form.password2 }}
 
   <label>תפקיד</label>
-  <select name="role" class="role-select" required>
-    <option value="">בחר תפקיד…</option>
-    <option value="sick">מטופל</option>
-    <option value="volunteer">מתנדב</option>
-  </select>
+  <div class="role-select-wrap">
+    <select name="role" class="role-select" required>
+      <option value="">בחר תפקיד…</option>
+      <option value="sick">מטופל</option>
+      <option value="volunteer">מתנדב</option>
+    </select>
+  </div>
 
   <button type="submit" class="btn-primary">צור חשבון</button>
 
