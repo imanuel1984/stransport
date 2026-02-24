@@ -1,13 +1,213 @@
+// Dummy connectRealtime to prevent ReferenceError if not defined elsewhere
+function connectRealtime() {}
+// Suggest route for selected requests
+async function suggestRoute() {
+    const missingPickup = [];
+    const missingDest = [];
+    const validRequestIds = [];
+    const mode = routeModeSelect ? routeModeSelect.value : 'pickup_then_dropoff';
+    const startLat = Number(routeStartLat && routeStartLat.value);
+    const startLng = Number(routeStartLng && routeStartLng.value);
+
+    selectedRouteIds.forEach(id => {
+      const meta = requestMeta.get(id) || {};
+      if (!meta.hasPickupCoords) {
+        missingPickup.push(id);
+        return;
+      }
+      if (mode === 'pickup_then_dropoff' && !meta.hasDestCoords) {
+        missingDest.push(id);
+        return;
+      }
+      validRequestIds.push(id);
+    });
+
+    if (missingPickup.length > 0) {
+      setRouteNotice('');
+      setFieldError(routeError, 'יש בקשות ללא נקודת איסוף.');
+      return;
+    }
+    if (missingDest.length > 0) {
+      setRouteNotice('');
+      setFieldError(routeError, 'יש בקשות ללא יעד. החלף למצב איסופים בלבד או עדכן כתובות.');
+      return;
+    }
+    if (validRequestIds.length === 0) {
+      setRouteNotice('');
+      setFieldError(routeError, 'אין בקשות תקינות למסלול.');
+      return;
+    }
+    routeSuggestBtn.disabled = true;
+    setFieldError(routeError, '');
+    if (routeResults) routeResults.innerHTML = '...מחשב מסלול';
+
+    try {
+      const res = await fetch('/api/route/suggest/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCookie('csrftoken') },
+        body: JSON.stringify({
+          start_lat: startLat,
+          start_lng: startLng,
+          request_ids: validRequestIds,
+          mode,
+        }),
+      });
+      const json = await safeJson(res);
+      if (json.__error || !json.success) {
+        const message = json.error || 'נכשל לחשב מסלול.';
+        setFieldError(routeError, message);
+        if (routeResults) routeResults.innerHTML = '';
+        return;
+      }
+
+      if (routeResults) {
+        routeResults.innerHTML = '';
+
+        if (!json.stops || json.stops.length === 0) {
+          setFieldError(routeError, '');
+          setRouteNotice(json.warning || 'אין בקשות עם קואורדינטות למסלול.');
+          return;
+        }
+
+        const summary = document.createElement('div');
+        const km = (json.total_distance_m / 1000).toFixed(1);
+        const mins = Math.round(json.total_duration_s / 60);
+        summary.className = 'route-stop';
+        summary.textContent = `סה"כ: ${km} ק"מ · ${mins} דק' (${json.matrix_source})`;
+        routeResults.appendChild(summary);
+
+        if (json.warning) {
+          setFieldError(routeError, '');
+          setRouteNotice(json.warning);
+        } else if (Array.isArray(json.skipped) && json.skipped.length > 0) {
+          setFieldError(routeError, '');
+          setRouteNotice(`דילוג על ${json.skipped.length} בקשות ללא קואורדינטות.`);
+        } else {
+          setFieldError(routeError, '');
+          setRouteNotice('');
+        }
+
+        json.stops.forEach((stop, index) => {
+          const item = document.createElement('div');
+          item.className = 'route-stop';
+          const typeLabel = stop.type === 'pickup' ? 'איסוף' : 'יעד';
+          item.textContent = `${index + 1}. ${typeLabel} (#${stop.request_id}) - ${stop.label}`;
+          routeResults.appendChild(item);
+        });
+
+        const linksRes = await fetch('/api/route/links/', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF },
+          body: JSON.stringify({
+            start: { lat: startLat, lng: startLng },
+            stops: json.stops.map(stop => ({ lat: stop.lat, lng: stop.lng })),
+          }),
+        });
+        const linksJson = await safeJson(linksRes);
+        if (!linksJson.__error && linksJson.google_full_route) {
+          const fullBtn = document.createElement('a');
+          fullBtn.href = linksJson.google_full_route;
+          fullBtn.target = '_blank';
+          fullBtn.rel = 'noopener';
+          fullBtn.className = 'button';
+          fullBtn.textContent = 'Open full route in Google Maps';
+          routeResults.appendChild(fullBtn);
+
+          if (linksJson.warning) {
+            setFieldError(routeError, linksJson.warning);
+          }
+
+          const list = document.createElement('div');
+          list.style.marginTop = '8px';
+          linksJson.google_legs.forEach((url, idx) => {
+            const row = document.createElement('div');
+            row.className = 'route-stop';
+            const googleLink = document.createElement('a');
+            googleLink.href = url;
+            googleLink.target = '_blank';
+            googleLink.rel = 'noopener';
+            googleLink.textContent = `Google ${idx + 1}`;
+            googleLink.className = 'button';
+            const wazeLink = document.createElement('a');
+            wazeLink.href = linksJson.waze_legs[idx];
+            wazeLink.target = '_blank';
+            wazeLink.rel = 'noopener';
+            wazeLink.textContent = `Waze ${idx + 1}`;
+            wazeLink.className = 'button';
+            row.appendChild(googleLink);
+            row.appendChild(wazeLink);
+            list.appendChild(row);
+          });
+          routeResults.appendChild(list);
+        }
+      }
+
+      if (map) {
+        if (routeLine) {
+          map.removeLayer(routeLine);
+        }
+        if (routeStartMarker) {
+          map.removeLayer(routeStartMarker);
+        }
+        const coords = [
+          [startLat, startLng],
+          ...json.stops.map(stop => [stop.lat, stop.lng]),
+        ];
+        routeLine = L.polyline(coords, { color: '#f97316', weight: 4 }).addTo(map);
+        routeStartMarker = L.circleMarker([startLat, startLng], {
+          radius: 6,
+          color: '#0f172a',
+          fillColor: '#f97316',
+          fillOpacity: 1,
+        }).addTo(map);
+        map.fitBounds(routeLine.getBounds(), { padding: [24, 24] });
+      }
+
+      if (routeNavBtn) {
+        if (!json.stops || json.stops.length === 0) {
+          routeNavBtn.disabled = true;
+          routeNavBtn.removeAttribute('data-url');
+          return;
+        }
+        const dest = json.stops[json.stops.length - 1];
+        const waypoints = json.stops
+          .slice(0, -1)
+          .map(stop => `${stop.lat},${stop.lng}`)
+          .join('|');
+        const url = `https://www.google.com/maps/dir/?api=1&origin=${startLat},${startLng}&destination=${dest.lat},${dest.lng}` +
+          (waypoints ? `&waypoints=${encodeURIComponent(waypoints)}` : '');
+        routeNavBtn.disabled = false;
+        routeNavBtn.dataset.url = url;
+      }
+    } catch (err) {
+      setFieldError(routeError, 'בעיה בחישוב המסלול.');
+      if (routeResults) routeResults.innerHTML = '';
+    } finally {
+      updateRouteButtonState();
+      // Focus and bound map to Israel
+      if (window.map && window.map.fitBounds) {
+        window.map.fitBounds([
+          [ISRAEL_BOUNDS.south, ISRAEL_BOUNDS.west],
+          [ISRAEL_BOUNDS.north, ISRAEL_BOUNDS.east]
+        ]);
+      }
+      if (window.map && window.map.setMaxBounds) {
+        window.map.setMaxBounds([
+          [ISRAEL_BOUNDS.south, ISRAEL_BOUNDS.west],
+          [ISRAEL_BOUNDS.north, ISRAEL_BOUNDS.east]
+        ]);
+      }
+    }
+}
 // CSRF helper
 function getCookie(name) {
   const v = document.cookie.match('(^|;)\\s*' + name + '\\s*=\\s*([^;]+)');
   return v ? v.pop() : '';
 }
-const CSRF = getCookie('csrftoken');
 
 async function safeJson(res) {
   const contentType = res.headers.get('content-type') || '';
-  if (!contentType.includes('application/json')) {
+    if (!contentType.includes('application/json') && !contentType.includes('text/html')) {
     const text = await res.text();
     return { __error: true, status: res.status, text };
   }
@@ -17,6 +217,337 @@ async function safeJson(res) {
   } catch (err) {
     return { __error: true, status: res.status, text: String(err) };
   }
+}
+
+window.__placesReady = false;
+window.__placesInit = null;
+
+window.initPlaces = function initPlaces() {
+  window.__placesReady = true;
+  if (typeof window.__placesInit === 'function') {
+    window.__placesInit();
+  }
+};
+
+function setFieldError(el, message) {
+  if (!el) return;
+  el.textContent = message || '';
+}
+
+const ISRAEL_BOUNDS = {
+  north: 33.3327,
+  south: 29.4533,
+  west: 34.2085,
+  east: 35.8950,
+};
+
+function applyIsraelRestriction(element) {
+  if (!element) return;
+    if (element.setComponentRestrictions) {
+      element.setComponentRestrictions({ country: 'IL' });
+    }
+    if (element.setBounds) {
+      element.setBounds({
+        north: ISRAEL_BOUNDS.north,
+        south: ISRAEL_BOUNDS.south,
+        west: ISRAEL_BOUNDS.west,
+        east: ISRAEL_BOUNDS.east,
+      });
+    }
+    // If using Leaflet or Google Maps directly, restrict map view as well
+    if (window.map && window.map.setMaxBounds) {
+      window.map.setMaxBounds([
+        [ISRAEL_BOUNDS.south, ISRAEL_BOUNDS.west],
+        [ISRAEL_BOUNDS.north, ISRAEL_BOUNDS.east]
+      ]);
+    }
+  try {
+    element.setAttribute('componentRestrictions', JSON.stringify({ country: 'il' }));
+    element.setAttribute('locationRestriction', JSON.stringify(ISRAEL_BOUNDS));
+    element.setAttribute('locationBias', JSON.stringify(ISRAEL_BOUNDS));
+  } catch (_) {
+    // Ignore attribute errors for older builds.
+  }
+}
+
+function normalizeIsraeliPhone(value) {
+  const digits = String(value || '').replace(/\D/g, '');
+  let stripped = digits;
+
+  if (stripped.startsWith('972')) {
+    stripped = stripped.slice(3);
+  }
+  if (stripped.startsWith('0')) {
+    stripped = stripped.slice(1);
+  }
+
+  const isValid = stripped.length === 8 || stripped.length === 9;
+  const validPrefix = stripped.length > 0 && /[2345789]/.test(stripped[0]);
+
+  if (!isValid || !validPrefix) {
+    return { valid: false, normalized: '' };
+  }
+
+  return { valid: true, normalized: `+972${stripped}` };
+}
+
+function isIsraelAddress(result) {
+  const components = (result && result.address_components) || [];
+  const country = components.find(c => Array.isArray(c.types) && c.types.includes('country'));
+  if (country) {
+    return country.short_name === 'IL' || country.long_name === 'Israel' || country.long_name === 'ישראל';
+  }
+  const loc = result && result.geometry && result.geometry.location;
+  const lat = loc && (typeof loc.lat === 'function' ? loc.lat() : loc.lat);
+  const lng = loc && (typeof loc.lng === 'function' ? loc.lng() : loc.lng);
+  if (Number.isFinite(lat) && Number.isFinite(lng)) {
+    return lat >= ISRAEL_BOUNDS.south && lat <= ISRAEL_BOUNDS.north && lng >= ISRAEL_BOUNDS.west && lng <= ISRAEL_BOUNDS.east;
+  }
+  return false;
+}
+
+function geocodeAddress(address) {
+  return new Promise(resolve => {
+    if (!address || !window.google || !google.maps || !google.maps.Geocoder) {
+      console.error('geocodeAddress: חסר address או google.maps.Geocoder', { address, google });
+      resolve(null);
+      return;
+    }
+    const geocoder = new google.maps.Geocoder();
+    geocoder.geocode({ address, region: 'IL' }, (results, status) => {
+      console.log('geocodeAddress:', { address, status, results });
+      if (status === 'OK' && results && results[0] && results[0].geometry && results[0].geometry.location) {
+        if (!isIsraelAddress(results[0])) {
+          console.warn('geocodeAddress: לא בישראל', results[0]);
+          resolve(null);
+          return;
+        }
+        const loc = results[0].geometry.location;
+        console.log('geocodeAddress: נמצא מיקום', { lat: loc.lat(), lng: loc.lng(), formatted: results[0].formatted_address });
+        resolve({ lat: loc.lat(), lng: loc.lng(), formatted: results[0].formatted_address });
+        return;
+      }
+      console.error('geocodeAddress: נכשל', { address, status, results });
+      resolve(null);
+	  });
+  });
+}
+
+function reverseGeocode(lat, lng) {
+  return new Promise(resolve => {
+    if (!window.google || !google.maps || !google.maps.Geocoder) {
+      console.warn('reverseGeocode: Geocoder not available');
+      window.__lastReverseGeocode = { status: 'NO_GEOCODER', results: null };
+      resolve(null);
+      return;
+    }
+    const geocoder = new google.maps.Geocoder();
+    geocoder.geocode({ location: { lat, lng } }, (results, status) => {
+      console.warn('reverseGeocode status:', status, 'results:', results && results[0]);
+      window.__lastReverseGeocode = { status, results: results && results[0] };
+      if (status === 'OK' && results && results[0] && results[0].formatted_address) {
+        resolve(results[0].formatted_address);
+        return;
+      }
+      console.warn('reverseGeocode: no address');
+      resolve(null);
+	  }); // closes forEach
+  });
+}
+
+function attachPlacesAutocomplete(input, container, onPlaceSelected) {
+  if (!input || !window.google || !google.maps || !google.maps.places) {
+    return;
+  }
+  if (google.maps.places.PlaceAutocompleteElement && container) {
+    const element = new google.maps.places.PlaceAutocompleteElement();
+    // --- ISRAEL-ONLY SUGGESTIONS FILTER ---
+    const origRender = element.renderSuggestions;
+    element.renderSuggestions = function(suggestions) {
+      if (Array.isArray(suggestions)) {
+        suggestions = suggestions.filter(s => {
+          if (s && s.place && s.place.addressComponents) {
+            return s.place.addressComponents.some(c => c && c.types && c.types.includes('country') && c.shortName === 'IL');
+          }
+          if (s && s.place && s.place.formattedAddress) {
+            return /ישראל|Israel|IL/.test(s.place.formattedAddress);
+          }
+          if (s && s.description) {
+            return /ישראל|Israel|IL/.test(s.description);
+          }
+          return false;
+        });
+      }
+      if (origRender) return origRender.call(this, suggestions);
+    };
+    let ignoreUntil = 0;
+    let selectedDisplayValue = '';
+    let lastSelectedAt = 0;
+    let lastObservedValue = '';
+    element.classList.add('place-autocomplete');
+    element.setAttribute('placeholder', input.getAttribute('placeholder') || '');
+    element.setAttribute('fields', 'formattedAddress,location');
+    // element.setAttribute('types', 'address'); // Removed: not supported in this API version
+    applyIsraelRestriction(element);
+    container.innerHTML = '';
+    container.appendChild(element);
+    input.style.display = 'none';
+    input.__placesElement = element;
+
+        const handlePlace = async place => {
+          let errorEl = null;
+          if (input.id && input.id.includes('pickup')) {
+            errorEl = document.getElementById('pickup-error');
+          } else if (input.id && input.id.includes('destination')) {
+            errorEl = document.getElementById('destination-error');
+          }
+
+          if (!place) {
+            onPlaceSelected(null);
+            setFieldError(errorEl, 'לא נבחרה כתובת מהרשימה.');
+            return;
+          }
+
+          try {
+            if (typeof place.fetchFields === 'function') {
+              await place.fetchFields({ fields: ['formattedAddress', 'location', 'addressComponents'] });
+            }
+
+            const address = place.formattedAddress || place.name || input.value;
+            const location = place.location;
+
+            console.log('handlePlace:', { address, location });
+
+            if (!address) {
+              setFieldError(errorEl, 'שגיאה: לא התקבלה כתובת.');
+              onPlaceSelected(null);
+              return;
+            }
+
+            if (!location) {
+              const geo = await geocodeAddress(address);
+              if (geo && geo.lat && geo.lng) {
+                input.value = address;
+                onPlaceSelected({ address, lat: geo.lat, lng: geo.lng });
+              } else {
+                setFieldError(errorEl, 'שגיאה: לא ניתן לאתר קואורדינטות.');
+                onPlaceSelected(null);
+              }
+              return;
+            }
+
+            const lat = typeof location.lat === 'function' ? location.lat() : Number(location.lat);
+            const lng = typeof location.lng === 'function' ? location.lng() : Number(location.lng);
+
+            if (!Number.isFinite(lat) || !Number.isFinite(lng) || (lat === 0 && lng === 0)) {
+              const geo = await geocodeAddress(address);
+              if (geo && geo.lat && geo.lng) {
+                input.value = address;
+                onPlaceSelected({ address, lat: geo.lat, lng: geo.lng });
+              } else {
+                setFieldError(errorEl, 'שגיאה: קואורדינטות לא תקינות.');
+                onPlaceSelected(null);
+              }
+              return;
+            }
+
+            input.value = address;
+            input.__lastSelectedAt = Date.now();
+            onPlaceSelected({ address, lat, lng });
+
+          } catch (err) {
+            console.error('handlePlace error:', err);
+            setFieldError(errorEl, 'שגיאה פנימית בבחירת כתובת.');
+            onPlaceSelected(null);
+          }
+        };
+
+    element.addEventListener('gmp-placeselect', async event => {
+      let place = null;
+
+      if (event.placePrediction && typeof event.placePrediction.toPlace === 'function') {
+        place = event.placePrediction.toPlace();
+      } else if (event.mh && typeof event.mh.toPlace === 'function') {
+        place = event.mh.toPlace();
+      } else {
+        place = event.place || (event.detail && event.detail.place);
+      }
+
+      if (place && typeof place.fetchFields === 'function') {
+        try {
+          await place.fetchFields({ fields: ['formattedAddress', 'location', 'addressComponents'] });
+        } catch (err) {
+          console.warn('fetchFields failed', err);
+        }
+      }
+
+      await handlePlace(place);
+    }); // closes forEach
+
+    element.addEventListener('gmp-select', async event => {
+      console.log('gmp-select event:', event);
+      let place = null;
+
+      // API חדש — placePrediction
+      if (event.placePrediction && typeof event.placePrediction.toPlace === 'function') {
+        place = event.placePrediction.toPlace();
+        console.log('place from placePrediction.toPlace():', place);
+      }
+      // API ישן — mh
+      else if (event.mh && typeof event.mh.toPlace === 'function') {
+        place = event.mh.toPlace();
+        console.log('place from mh.toPlace():', place);
+      }
+      // fallback רגיל
+      else {
+        place = event.place || (event.detail && event.detail.place);
+      }
+
+      if (place && typeof place.fetchFields === 'function') {
+        try {
+          await place.fetchFields({ fields: ['formattedAddress', 'location', 'addressComponents'] });
+          console.log('after fetchFields:', {
+            formattedAddress: place.formattedAddress,
+            location: place.location,
+          });
+        } catch (err) {
+          console.warn('fetchFields failed', err);
+        }
+      }
+
+      await handlePlace(place);
+    });
+
+    function evaluateCurrentValue() {
+      // Basic validation for address input
+      const value = element.value;
+      let errorEl = null;
+      if (element.id && element.id.includes('pickup')) {
+        errorEl = document.getElementById('pickup-error');
+      } else if (element.id && element.id.includes('destination')) {
+        errorEl = document.getElementById('destination-error');
+      }
+      if (!value || value.length < 3) {
+        setFieldError && setFieldError(errorEl, 'יש להזין כתובת תקינה');
+        return;
+      }
+      setFieldError && setFieldError(errorEl, '');
+      // No onPlaceSelected(null) here
+    }
+    element.addEventListener('input', () => {
+      // אל תאפס אם זה input שמגיע מיד אחרי בחירה מהרשימה
+      if (Date.now() - lastSelectedAt < 1500) return;
+      evaluateCurrentValue();
+    });
+    element.addEventListener('change', () => {
+      if (Date.now() - lastSelectedAt < 1500) return;
+      evaluateCurrentValue();
+    });
+      lastSelectedAt = Date.now();
+      lastSelectedAt = Date.now();
+      // Removed poller
+      return;
+    }
 }
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -29,13 +560,113 @@ document.addEventListener('DOMContentLoaded', () => {
   const showOpenBtns = document.querySelectorAll('#show-open-btn');
   const role = window.currentUserRole || '';
   const mapEl = document.getElementById('requests-map');
+  const patientMapEl = document.getElementById('patient-map');
+  const toggleVolunteerMapBtn = document.getElementById('toggle-volunteer-map');
+  const togglePatientMapBtn = document.getElementById('toggle-patient-map');
+  const routeStartLat = document.getElementById('route-start-lat');
+  const routeStartLng = document.getElementById('route-start-lng');
+  const routeStartInput = document.getElementById('route-start-input');
+  const routeStartAutocomplete = document.getElementById('route-start-autocomplete');
+  const routeUseLocationBtn = document.getElementById('route-use-location');
+  const routeSuggestBtn = document.getElementById('route-suggest-btn');
+  const routeNavBtn = document.getElementById('route-nav-btn');
+  const routeModeSelect = document.getElementById('route-mode');
+  const routeResults = document.getElementById('route-results');
+  const routeError = document.getElementById('route-error');
+  const routeNotice = document.getElementById('route-notice');
+  // זה הבאדום
   let map = null;
   let markersLayer = null;
+  let patientMap = null;
+  let patientPickupMarker = null;
+  let patientDestMarker = null;
+  let routeLine = null;
+  let routeStartMarker = null;
+  const selectedRouteIds = new Set();
+  const requestMeta = new Map();
+
+  const pickupInput = document.getElementById('pickup-input');
+  const pickupAutocomplete = document.getElementById('pickup-autocomplete');
+  const destinationInput = document.getElementById('destination-input');
+  const destinationAutocomplete = document.getElementById('destination-autocomplete');
+  const pickupLatInput = document.getElementById('pickup-lat');
+  const pickupLngInput = document.getElementById('pickup-lng');
+  const destLatInput = document.getElementById('dest-lat');
+  const destLngInput = document.getElementById('dest-lng');
+  const pickupError = document.getElementById('pickup-error');
+  const destinationError = document.getElementById('destination-error');
+  const phoneInput = document.getElementById('phone-input');
+  const phoneError = document.getElementById('phone-error');
+  const timeInput = createForm ? createForm.querySelector('input[name="time"]') : null;
+  let createFormError = document.getElementById('create-form-error');
+  let createFormNotice = document.getElementById('create-form-notice');
+
+  const editModal = document.getElementById('edit-modal');
+  const editForm = document.getElementById('edit-request-form');
+  const editRequestId = document.getElementById('edit-request-id');
+  const editPickupInput = document.getElementById('edit-pickup-input');
+  const editPickupAutocomplete = document.getElementById('edit-pickup-autocomplete');
+  const editDestinationInput = document.getElementById('edit-destination-input');
+  const editDestinationAutocomplete = document.getElementById('edit-destination-autocomplete');
+  const editPickupLat = document.getElementById('edit-pickup-lat');
+  const editPickupLng = document.getElementById('edit-pickup-lng');
+  const editDestLat = document.getElementById('edit-dest-lat');
+  const editDestLng = document.getElementById('edit-dest-lng');
+  const editTimeInput = document.getElementById('edit-time-input');
+  const editNotesInput = document.getElementById('edit-notes-input');
+  const editPickupError = document.getElementById('edit-pickup-error');
+  const editDestinationError = document.getElementById('edit-destination-error');
+  const editSubmitBtn = document.getElementById('edit-submit-btn');
+
+  const createState = {
+    pickupValid: false,
+    destinationValid: false,
+    phoneValid: false,
+    timeValid: false,
+  };
+
+	const editState = {
+	  pickupValid: false,
+	  destinationValid: false,
+	};
 
   function formatRoute(pickup, destination) {
     const isRtl = (document.documentElement.dir || '').toLowerCase() === 'rtl';
     const arrow = isRtl ? '←' : '→';
     return `${pickup} ${arrow} ${destination}`;
+  }
+
+  function updateRouteButtonState() {
+    if (!routeSuggestBtn) return;
+    const lat = Number(routeStartLat && routeStartLat.value);
+    const lng = Number(routeStartLng && routeStartLng.value);
+    const hasCoords = Number.isFinite(lat) && Number.isFinite(lng);
+    const hasAddress = Boolean(routeStartInput && routeStartInput.value);
+    const hasStart = hasCoords || hasAddress;
+    routeSuggestBtn.disabled = !hasStart || selectedRouteIds.size === 0;
+  }
+
+  function setRouteNotice(message) {
+    if (!routeNotice) return;
+    routeNotice.textContent = message || '';
+  }
+
+  function clearRouteUI() {
+    if (routeResults) {
+      routeResults.innerHTML = '';
+    }
+    if (routeNavBtn) {
+      routeNavBtn.disabled = true;
+      routeNavBtn.removeAttribute('data-url');
+    }
+    if (routeLine && map) {
+      map.removeLayer(routeLine);
+      routeLine = null;
+    }
+    if (routeStartMarker && map) {
+      map.removeLayer(routeStartMarker);
+      routeStartMarker = null;
+    }
   }
 
   function showPanel(el) {
@@ -56,22 +687,551 @@ function hidePanel(el) {
   showPanel(requestsContainer);
   hidePanel(closedContainer);
   hidePanel(acceptedContainer);
+
+  updateCreateSubmitState();
+
+  initPatientMap();
+  updatePatientMap();
+
+  if (toggleVolunteerMapBtn && mapEl) {
+    const stored = localStorage.getItem('volunteerMapHidden') === 'true';
+    if (stored) {
+      mapEl.classList.add('map-hidden');
+      toggleVolunteerMapBtn.textContent = 'הצג מפה';
+    }
+
+    toggleVolunteerMapBtn.addEventListener('click', () => {
+      const isHidden = !mapEl.classList.contains('map-hidden');
+      if (isHidden) {
+        mapEl.classList.add('map-hidden');
+      } else {
+        mapEl.classList.remove('map-hidden');
+        setTimeout(() => { if (map) map.invalidateSize(); }, 200);
+      }
+      toggleVolunteerMapBtn.textContent = isHidden ? 'הצג מפה' : 'הסתר מפה';
+      localStorage.setItem('volunteerMapHidden', String(isHidden));
+    });
+  }
+
+  if (togglePatientMapBtn && patientMapEl) {
+    const stored = localStorage.getItem('patientMapHidden') === 'true';
+    if (stored) {
+      patientMapEl.classList.add('map-hidden');
+      togglePatientMapBtn.textContent = 'הצג מפה';
+    }
+
+    togglePatientMapBtn.addEventListener('click', () => {
+      const isHidden = !patientMapEl.classList.contains('map-hidden');
+      if (isHidden) {
+        patientMapEl.classList.add('map-hidden');
+      } else {
+        patientMapEl.classList.remove('map-hidden');
+        setTimeout(() => { if (patientMap) patientMap.invalidateSize(); }, 200);
+      }
+      togglePatientMapBtn.textContent = isHidden ? 'הצג מפה' : 'הסתר מפה';
+      localStorage.setItem('patientMapHidden', String(isHidden));
+    });
+  }
+
+  if (pickupInput && destinationInput) {
+    setTimeout(() => {
+      const placesReady = window.__placesReady && window.google && google.maps && google.maps.places;
+      if (!placesReady) {
+        setFieldError(pickupError, 'חסר חיבור ל-Google Places. יש להגדיר GOOGLE_PLACES_API_KEY.');
+        setFieldError(destinationError, 'חסר חיבור ל-Google Places. יש להגדיר GOOGLE_PLACES_API_KEY.');
+      } else {
+        setFieldError(pickupError, '');
+        setFieldError(destinationError, '');
+      }
+    }, 1500);
+  }
+
+  if (routeStartLat && routeStartLng) {
+    routeStartLat.addEventListener('input', updateRouteButtonState);
+    routeStartLng.addEventListener('input', updateRouteButtonState);
+  }
+
+  if (routeStartInput) {
+    routeStartInput.addEventListener('input', () => {
+      if (routeStartLat) routeStartLat.value = '';
+      if (routeStartLng) routeStartLng.value = '';
+      updateRouteButtonState();
+    });
+  }
+
+  if (routeUseLocationBtn) {
+    routeUseLocationBtn.addEventListener('click', () => {
+      if (!navigator.geolocation) {
+        setFieldError(routeError, 'Geolocation לא נתמך בדפדפן.');
+        return;
+      }
+      navigator.geolocation.getCurrentPosition(
+        async pos => {
+          const lat = pos.coords.latitude;
+          const lng = pos.coords.longitude;
+          if (routeStartLat) routeStartLat.value = lat.toFixed(6);
+          if (routeStartLng) routeStartLng.value = lng.toFixed(6);
+          if (routeStartInput) {
+            const address = await reverseGeocode(lat, lng);
+            if (address) {
+              routeStartInput.value = address;
+              if (routeStartInput.__placesElement) {
+                routeStartInput.__placesElement.value = address;
+              }
+              setFieldError(routeError, '');
+              setRouteNotice('');
+            } else {
+              const coordsLabel = `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+              routeStartInput.value = `מיקום נוכחי (${coordsLabel})`;
+              if (routeStartInput.__placesElement) {
+                routeStartInput.__placesElement.value = routeStartInput.value;
+              }
+              setRouteNotice('לא נמצאה כתובת, משתמשים בקואורדינטות.');
+            }
+          }
+          updateRouteButtonState();
+        },
+        () => {
+          setFieldError(routeError, 'לא ניתן לקבל מיקום.');
+        }
+      );
+    });
+  }
+
+  window.__placesInit = setupPlaces;
+  if (window.__placesReady) {
+    setupPlaces();
+  }
+
+  function ensureCreateFormError() {
+    if (!createForm || createFormError) return;
+    createFormError = document.createElement('div');
+    createFormError.id = 'create-form-error';
+    createFormError.className = 'field-error';
+    createFormError.textContent = '';
+    createForm.prepend(createFormError);
+  }
+
+  function ensureCreateFormNotice() {
+    if (!createForm || createFormNotice) return;
+    createFormNotice = document.createElement('div');
+    createFormNotice.id = 'create-form-notice';
+    createFormNotice.className = 'field-error';
+    createFormNotice.textContent = '';
+    createForm.prepend(createFormNotice);
+  }
+
+  function setCreateFormError(message) {
+    if (!createForm) return;
+    ensureCreateFormError();
+    if (createFormError) {
+      createFormError.textContent = message || '';
+    }
+  }
+
+  function setCreateFormNotice(message) {
+    if (!createForm) return;
+    ensureCreateFormNotice();
+    if (createFormNotice) {
+      createFormNotice.textContent = message || '';
+    }
+  }
+
+  function updateCreateSubmitState() {
+    if (!createForm) return;
+    const submitBtn = createForm.querySelector('button[type="submit"]');
+    const pickupLat = Number(pickupLatInput && pickupLatInput.value);
+    const pickupLng = Number(pickupLngInput && pickupLngInput.value);
+    const destLat = Number(destLatInput && destLatInput.value);
+    const destLng = Number(destLngInput && destLngInput.value);
+
+    const hasPickupText = Boolean(pickupInput && pickupInput.value);
+    const hasDestText = Boolean(destinationInput && destinationInput.value);
+    const hasPickupCoords = Boolean(pickupLatInput && pickupLatInput.value) && Number.isFinite(pickupLat) && pickupLat !== 0;
+    const hasDestCoords = Boolean(destLatInput && destLatInput.value) && Number.isFinite(destLat) && destLat !== 0;
+
+    if (!hasPickupText) {
+      if (pickupLatInput) pickupLatInput.value = '';
+      if (pickupLngInput) pickupLngInput.value = '';
+    }
+    if (!hasDestText) {
+      if (destLatInput) destLatInput.value = '';
+      if (destLngInput) destLngInput.value = '';
+    }
+
+    createState.pickupValid = hasPickupText && hasPickupCoords;
+    createState.destinationValid = hasDestText && hasDestCoords;
+    createState.timeValid = Boolean(timeInput && timeInput.value);
+
+    if (phoneInput) {
+      const phoneCheck = normalizeIsraeliPhone(phoneInput.value);
+      createState.phoneValid = phoneCheck.valid;
+    }
+
+    if (pickupInput && pickupInput.value && !hasPickupCoords) {
+      setFieldError(pickupError, 'כתובת לא נבחרה מהרשימה, ייתכן שאין קואורדינטות.');
+      createState.pickupValid = false;
+    } else if (pickupInput && !pickupInput.value) {
+      setFieldError(pickupError, '');
+    } else if (hasPickupCoords) {
+      setFieldError(pickupError, '');
+    }
+    if (destinationInput && destinationInput.value && !hasDestCoords) {
+      setFieldError(destinationError, 'כתובת לא נבחרה מהרשימה, ייתכן שאין קואורדינטות.');
+      createState.destinationValid = false;
+    } else if (destinationInput && !destinationInput.value) {
+      setFieldError(destinationError, '');
+    } else if (hasDestCoords) {
+      setFieldError(destinationError, '');
+    }
+    if (phoneInput && phoneInput.value && !createState.phoneValid) {
+      setFieldError(phoneError, 'מספר טלפון לא תקין.');
+    } else if (phoneInput && (!phoneInput.value || createState.phoneValid)) {
+      setFieldError(phoneError, '');
+    }
+
+    // Debug print for coordinates and state
+    console.debug('[updateCreateSubmitState]', {
+      pickup: { text: pickupInput && pickupInput.value, lat: pickupLat, lng: pickupLng },
+      destination: { text: destinationInput && destinationInput.value, lat: destLat, lng: destLng },
+      createState
+    });
+
+    const isValid =
+      createState.pickupValid &&
+      createState.destinationValid &&
+      createState.phoneValid &&
+      createState.timeValid;
+    if (submitBtn) {
+      submitBtn.disabled = !isValid;
+    }
+  }
+
+  function updateEditSubmitState() {
+    if (!editSubmitBtn) return;
+    const isValid = editState.pickupValid && editState.destinationValid;
+    editSubmitBtn.disabled = !isValid;
+  }
+
+  function clearPlaceValidation(state, errorEl, latInput, lngInput) {
+    if (state === 'pickup') {
+      createState.pickupValid = false;
+    }
+    if (state === 'destination') {
+      createState.destinationValid = false;
+    }
+    setFieldError(errorEl, 'בחר כתובת מהרשימה.');
+    if (latInput) latInput.value = '';
+    if (lngInput) lngInput.value = '';
+    if (state === 'pickup' && pickupInput && pickupInput.dataset) {
+      delete pickupInput.dataset.lat;
+      delete pickupInput.dataset.lng;
+    }
+    if (state === 'destination' && destinationInput && destinationInput.dataset) {
+      delete destinationInput.dataset.lat;
+      delete destinationInput.dataset.lng;
+    }
+    updateCreateSubmitState();
+  }
+
+  function clearEditPlaceValidation(state, errorEl, latInput, lngInput) {
+    if (state === 'pickup') {
+      editState.pickupValid = false;
+    }
+    if (state === 'destination') {
+      editState.destinationValid = false;
+    }
+    setFieldError(errorEl, 'בחר כתובת מהרשימה.');
+    if (latInput) latInput.value = '';
+    if (lngInput) lngInput.value = '';
+    updateEditSubmitState();
+  }
+
+  function setupPlaces() {
+    attachPlacesAutocomplete(routeStartInput, routeStartAutocomplete, place => {
+      if (!place) {
+        if (routeStartLat) routeStartLat.value = '';
+        if (routeStartLng) routeStartLng.value = '';
+        updateRouteButtonState();
+        return;
+      }
+      if (routeStartInput) routeStartInput.value = place.address;
+      if (routeStartLat) routeStartLat.value = place.lat;
+      if (routeStartLng) routeStartLng.value = place.lng;
+      setFieldError(routeError, '');
+      updateRouteButtonState();
+    });
+
+    attachPlacesAutocomplete(pickupInput, pickupAutocomplete, place => {
+      if (!place) {
+        clearPlaceValidation('pickup', pickupError, pickupLatInput, pickupLngInput);
+        return;
+      }
+      pickupInput.value = place.address;
+      // אם אין קואורדינטות, ננסה geocode
+      if (typeof place.lat === 'undefined' || typeof place.lng === 'undefined' || !Number.isFinite(Number(place.lat))) {
+        setFieldError(pickupError, 'ממלא קואורדינטות אוטומטית...');
+        geocodeAddress(place.address).then(geo => {
+          if (geo && geo.lat && geo.lng) {
+            pickupLatInput.value = geo.lat;
+            pickupLngInput.value = geo.lng;
+            if (pickupInput && pickupInput.dataset) {
+              pickupInput.dataset.lat = String(geo.lat);
+              pickupInput.dataset.lng = String(geo.lng);
+            }
+            createState.pickupValid = true;
+            setFieldError(pickupError, '');
+            updatePatientMap();
+            updateCreateSubmitState();
+          } else {
+            setFieldError(pickupError, 'שגיאה: לא ניתן לאתר קואורדינטות לכתובת.');
+            pickupLatInput.value = '';
+            pickupLngInput.value = '';
+            if (pickupInput && pickupInput.dataset) {
+              delete pickupInput.dataset.lat;
+              delete pickupInput.dataset.lng;
+            }
+            createState.pickupValid = false;
+            updateCreateSubmitState();
+          }
+        });
+        return;
+      }
+      pickupLatInput.value = place.lat;
+      pickupLngInput.value = place.lng;
+      if (pickupInput && pickupInput.dataset) {
+        pickupInput.dataset.lat = String(place.lat);
+        pickupInput.dataset.lng = String(place.lng);
+      }
+      createState.pickupValid = true;
+      setFieldError(pickupError, '');
+      updatePatientMap();
+      updateCreateSubmitState();
+    });
+
+    attachPlacesAutocomplete(destinationInput, destinationAutocomplete, place => {
+      if (!place) {
+        setFieldError(destinationError, 'לא נבחרה כתובת מהרשימה.');
+        clearPlaceValidation('destination', destinationError, destLatInput, destLngInput);
+        return;
+      }
+      if (!place.address) {
+        setFieldError(destinationError, 'שגיאה: אין כתובת זמינה מהבחירה.');
+        clearPlaceValidation('destination', destinationError, destLatInput, destLngInput);
+        return;
+      }
+      destinationInput.value = place.address;
+      // אם אין קואורדינטות, ננסה geocode
+      if (typeof place.lat === 'undefined' || typeof place.lng === 'undefined' || !Number.isFinite(Number(place.lat)) || Number(place.lat) === 0 || Number(place.lng) === 0) {
+        setFieldError(destinationError, 'ממלא קואורדינטות אוטומטית...');
+        geocodeAddress(place.address).then(geo => {
+          console.log('Geocode result for address:', place.address, geo);
+          if (geo && geo.lat && geo.lng) {
+            destLatInput.value = geo.lat;
+            destLngInput.value = geo.lng;
+            if (destinationInput && destinationInput.dataset) {
+              destinationInput.dataset.lat = String(geo.lat);
+              destinationInput.dataset.lng = String(geo.lng);
+            }
+            createState.destinationValid = true;
+            setFieldError(destinationError, '');
+            updatePatientMap();
+            updateCreateSubmitState();
+          } else {
+            setFieldError(destinationError, 'שגיאה: לא ניתן לאתר קואורדינטות לכתובת.');
+            destLatInput.value = '';
+            destLngInput.value = '';
+            if (destinationInput && destinationInput.dataset) {
+              delete destinationInput.dataset.lat;
+              delete destinationInput.dataset.lng;
+            }
+            createState.destinationValid = false;
+            updateCreateSubmitState();
+          }
+        });
+        return;
+      }
+      destLatInput.value = place.lat;
+      destLngInput.value = place.lng;
+      if (destinationInput && destinationInput.dataset) {
+        destinationInput.dataset.lat = String(place.lat);
+        destinationInput.dataset.lng = String(place.lng);
+      }
+      createState.destinationValid = true;
+      setFieldError(destinationError, '');
+      updatePatientMap();
+      updateCreateSubmitState();
+    });
+
+    attachPlacesAutocomplete(editPickupInput, editPickupAutocomplete, place => {
+      if (!place) {
+        clearEditPlaceValidation('pickup', editPickupError, editPickupLat, editPickupLng);
+        return;
+      }
+      editPickupInput.value = place.address;
+      editPickupLat.value = place.lat;
+      editPickupLng.value = place.lng;
+      editState.pickupValid = true;
+      setFieldError(editPickupError, '');
+      updateEditSubmitState();
+    });
+
+    attachPlacesAutocomplete(editDestinationInput, editDestinationAutocomplete, place => {
+      if (!place) {
+        clearEditPlaceValidation('destination', editDestinationError, editDestLat, editDestLng);
+        return;
+      }
+      editDestinationInput.value = place.address;
+      editDestLat.value = place.lat;
+      editDestLng.value = place.lng;
+      editState.destinationValid = true;
+      setFieldError(editDestinationError, '');
+      updateEditSubmitState();
+    });
+  }
   
   function initMap() {
     if (!mapEl || !window.L || map) return;
 
-    map = L.map(mapEl).setView([32.0853, 34.7818], 10);
+    map = L.map(mapEl, {
+      scrollWheelZoom: false,
+      doubleClickZoom: false,
+      tap: false,
+    });
+    // Always fit and bound to Israel
+    setTimeout(() => {
+      map.invalidateSize(true);
+      map.fitBounds([
+        [ISRAEL_BOUNDS.south, ISRAEL_BOUNDS.west],
+        [ISRAEL_BOUNDS.north, ISRAEL_BOUNDS.east]
+      ]);
+      map.setMaxBounds([
+        [ISRAEL_BOUNDS.south, ISRAEL_BOUNDS.west],
+        [ISRAEL_BOUNDS.north, ISRAEL_BOUNDS.east]
+      ]);
+    }, 100);
+    // Leaflet marker icon LOCAL fix for Tracking Prevention
+    delete L.Icon.Default.prototype._getIconUrl;
+    L.Icon.Default.mergeOptions({
+      iconUrl: '/static/stransport/images/marker-icon.png',
+      iconRetinaUrl: '/static/stransport/images/marker-icon-2x.png',
+      shadowUrl: '/static/stransport/images/marker-shadow.png'
+    });
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '&copy; OpenStreetMap contributors',
       maxZoom: 18,
     }).addTo(map);
 
     markersLayer = L.layerGroup().addTo(map);
+    setTimeout(() => {
+      if (map) map.invalidateSize();
+    }, 300);
+  }
+
+  function initPatientMap() {
+    if (!patientMapEl || !window.L || patientMap) return;
+
+    patientMap = L.map(patientMapEl, {
+      scrollWheelZoom: false,
+      doubleClickZoom: false,
+      tap: false,
+    });
+    setTimeout(() => {
+      patientMap.invalidateSize(true);
+      patientMap.fitBounds([
+        [ISRAEL_BOUNDS.south, ISRAEL_BOUNDS.west],
+        [ISRAEL_BOUNDS.north, ISRAEL_BOUNDS.east]
+      ]);
+      patientMap.setMaxBounds([
+        [ISRAEL_BOUNDS.south, ISRAEL_BOUNDS.west],
+        [ISRAEL_BOUNDS.north, ISRAEL_BOUNDS.east]
+      ]);
+    }, 100);
+    // Leaflet marker icon LOCAL fix for Tracking Prevention (same as volunteer map)
+    delete L.Icon.Default.prototype._getIconUrl;
+    L.Icon.Default.mergeOptions({
+      iconUrl: '/static/stransport/images/marker-icon.png',
+      iconRetinaUrl: '/static/stransport/images/marker-icon-2x.png',
+      shadowUrl: '/static/stransport/images/marker-shadow.png'
+    });
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap contributors',
+      maxZoom: 18,
+    }).addTo(patientMap);
+    setTimeout(() => {
+      if (patientMap) patientMap.invalidateSize();
+    }, 300);
+  }
+
+  function updatePatientMap() {
+    if (!patientMap) return;
+
+    const pickupLat = Number(pickupLatInput && pickupLatInput.value);
+    const pickupLng = Number(pickupLngInput && pickupLngInput.value);
+    const destLat = Number(destLatInput && destLatInput.value);
+    const destLng = Number(destLngInput && destLngInput.value);
+
+    const hasPickupCoords =
+      Number.isFinite(pickupLat) &&
+      Number.isFinite(pickupLng) &&
+      pickupLat >= ISRAEL_BOUNDS.south &&
+      pickupLat <= ISRAEL_BOUNDS.north &&
+      pickupLng >= ISRAEL_BOUNDS.west &&
+      pickupLng <= ISRAEL_BOUNDS.east;
+
+    const hasDestCoords =
+      Number.isFinite(destLat) &&
+      Number.isFinite(destLng) &&
+      destLat >= ISRAEL_BOUNDS.south &&
+      destLat <= ISRAEL_BOUNDS.north &&
+      destLng >= ISRAEL_BOUNDS.west &&
+      destLng <= ISRAEL_BOUNDS.east;
+
+    // Remove old markers if coordinates are missing or invalid
+    if (!hasPickupCoords && patientPickupMarker) {
+      patientMap.removeLayer(patientPickupMarker);
+      patientPickupMarker = null;
+    }
+    if (!hasDestCoords && patientDestMarker) {
+      patientMap.removeLayer(patientDestMarker);
+      patientDestMarker = null;
+    }
+
+    // Add or update markers if coordinates exist and are inside Israel bounds
+    if (hasPickupCoords) {
+      if (!patientPickupMarker) {
+        patientPickupMarker = L.marker([pickupLat, pickupLng]).addTo(patientMap);
+      } else {
+        patientPickupMarker.setLatLng([pickupLat, pickupLng]);
+      }
+    }
+    if (hasDestCoords) {
+      if (!patientDestMarker) {
+        patientDestMarker = L.marker([destLat, destLng]).addTo(patientMap);
+      } else {
+        patientDestMarker.setLatLng([destLat, destLng]);
+      }
+    }
+
+    // Always fit bounds to markers if exist, else to Israel
+    const bounds = [];
+    if (patientPickupMarker) bounds.push(patientPickupMarker.getLatLng());
+    if (patientDestMarker) bounds.push(patientDestMarker.getLatLng());
+    if (bounds.length > 0) {
+      patientMap.fitBounds(bounds, { padding: [20, 20], maxZoom: 16 });
+    } else {
+      patientMap.fitBounds([
+        [ISRAEL_BOUNDS.south, ISRAEL_BOUNDS.west],
+        [ISRAEL_BOUNDS.north, ISRAEL_BOUNDS.east]
+      ]);
+    }
+    setTimeout(() => patientMap.invalidateSize(true), 100);
   }
 
   function updateMapMarkers(requests) {
     if (!map || !markersLayer) return;
 
+    if (map) map.invalidateSize();
     markersLayer.clearLayers();
     const points = [];
 
@@ -87,13 +1247,23 @@ function hidePanel(el) {
     });
 
     if (points.length > 0) {
-      map.fitBounds(points, { padding: [20, 20] });
+      map.fitBounds(points, { padding: [20, 20], maxZoom: 15 });
+      setTimeout(() => map.invalidateSize(true), 100);
+    } else {
+      // fallback to Israel
+      map.fitBounds([
+        [ISRAEL_BOUNDS.south, ISRAEL_BOUNDS.west],
+        [ISRAEL_BOUNDS.north, ISRAEL_BOUNDS.east]
+      ]);
+      setTimeout(() => map.invalidateSize(true), 100);
     }
   }
 
   async function loadOpenRequests() {
     if (!requestsContainer) return;
     try {
+      selectedRouteIds.clear();
+      requestMeta.clear();
       const res = await fetch('/api/requests/');
       const json = await safeJson(res);
       if (json.__error) {
@@ -121,21 +1291,25 @@ function hidePanel(el) {
         const card = document.createElement('div');
         card.className = 'request-card ' + (r.status === 'open' ? 'open' : r.status);
 
+        const hasPickupCoords = Number.isFinite(Number(r.pickup_lat)) && Number.isFinite(Number(r.pickup_lng));
+        const hasDestCoords = Number.isFinite(Number(r.dest_lat)) && Number.isFinite(Number(r.dest_lng));
+        requestMeta.set(r.id, { hasPickupCoords, hasDestCoords });
+
         let volHtml = '';
         if (r.volunteer) {
-          volHtml = `<div class="volunteer-info">מתנדב: ${r.volunteer.username} — ${r.volunteer.phone || '-'}</div>`;
+          volHtml = `<div class="volunteer-info">מתנדב: ${r.volunteer.username} — ${r.volunteer.phone || '-'}<\/div>`;
         } else if (r.no_volunteers_available) {
-          volHtml = `<div class="volunteer-info no-volunteers">אין מתנדבים זמינים</div>`;
+          volHtml = `<div class="volunteer-info no-volunteers">אין מתנדבים זמינים<\/div>`;
         }
 
         card.innerHTML = `
           <div class="request-info">
-            <div class="route">${formatRoute(r.pickup, r.destination)}</div>
-            <div class="status">${r.requested_time} · ${r.status_display}</div>
-            <div style="margin-top:6px">הערות: ${r.notes || '-'}</div>
-            <div style="margin-top:6px">טלפון מטופל: ${r.phone || '-'}</div>
+            <div class="route">${formatRoute(r.pickup, r.destination)}<\/div>
+            <div class="status">${r.requested_time} · ${r.status_display}<\/div>
+            <div style="margin-top:6px">הערות: ${r.notes || '-'}<\/div>
+            <div style="margin-top:6px">טלפון מטופל: ${r.phone || '-'}<\/div>
             ${volHtml}
-          </div>
+          <\/div>
         `;
 
         // מטופל: ביטול
@@ -151,11 +1325,51 @@ function hidePanel(el) {
             });
             loadOpenRequests();
           };
+
+          const editBtn = document.createElement('button');
+          editBtn.className = 'button';
+          editBtn.textContent = 'ערוך';
+          editBtn.onclick = () => {
+            openEditModal(r);
+          };
+
           card.appendChild(cancelBtn);
+          card.appendChild(editBtn);
         }
 
-        // מתנדב: קבל + דחה
+        // מתנדב: קבל + דחה + בחירה למסלול
         if (role === 'volunteer' && r.status === 'open') {
+          const routeWrap = document.createElement('div');
+          routeWrap.style.marginTop = '8px';
+          const checkbox = document.createElement('input');
+          checkbox.type = 'checkbox';
+          checkbox.className = 'route-select';
+          checkbox.dataset.requestId = r.id;
+          if (!hasPickupCoords) {
+            checkbox.disabled = true;
+          }
+          checkbox.checked = selectedRouteIds.has(r.id);
+          checkbox.addEventListener('change', e => {
+            if (e.target.checked) {
+              if (selectedRouteIds.size >= 6) {
+                e.target.checked = false;
+                alert('אפשר לבחור עד 6 בקשות.');
+                return;
+              }
+              selectedRouteIds.add(r.id);
+            } else {
+              selectedRouteIds.delete(r.id);
+            }
+            updateRouteButtonState();
+          });
+
+          const label = document.createElement('label');
+          label.style.marginRight = '6px';
+          label.textContent = !hasPickupCoords ? 'חסרות קואורדינטות לאיסוף' : 'בחר למסלול';
+          label.prepend(checkbox);
+          routeWrap.appendChild(label);
+          card.appendChild(routeWrap);
+
           const acceptBtn = document.createElement('button');
           acceptBtn.className = 'accept-btn';
           acceptBtn.textContent = 'קבל';
@@ -171,15 +1385,12 @@ function hidePanel(el) {
           rejectBtn.className = 'button';
           rejectBtn.textContent = 'דחה';
           rejectBtn.onclick = async () => {
-            const reason = prompt('סיבת דחייה (לא חובה):');
             await fetch(`/api/requests/reject/${r.id}/`, {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF },
-              body: JSON.stringify({ reason }),
+              headers: { 'X-CSRFToken': CSRF },
             });
             loadOpenRequests();
           };
-
           card.appendChild(acceptBtn);
           card.appendChild(rejectBtn);
         }
@@ -188,16 +1399,16 @@ function hidePanel(el) {
       });
 
       if (role === 'volunteer') {
-        initMap();
         updateMapMarkers(reqs);
       }
+
     } catch (err) {
       console.error(err);
-      requestsContainer.innerHTML = '<p class="no-requests">בעיית תקשורת.</p>';
+      requestsContainer.innerHTML = '<p class="no-requests">שגיאה בטעינת בקשות.</p>';
     }
-  }
+    } // סוף loadOpenRequests
 
-  function isVisible(el) {
+    function isVisible(el) {
     return el && !el.classList.contains('panel-hidden');
   }
 
@@ -231,175 +1442,13 @@ function hidePanel(el) {
         return;
       }
 
-      reqs.forEach(r => {
-        const div = document.createElement('div');
-        div.className = 'request-card closed';
-
-        let extra = '';
-        if (r.status === 'cancelled' && r.no_volunteers_available) {
-          extra = '<div class="volunteer-info no-volunteers">אין מתנדבים זמינים</div>';
-        }
-
-        div.innerHTML = `
-          <div class="request-info">
-            <div class="route">${formatRoute(r.pickup, r.destination)}</div>
-            <div class="status">${r.requested_time} · ${r.status_label || r.status_display}</div>
-            <div style="margin-top:6px">הערות: ${r.notes || '-'}</div>
-            <div style="margin-top:6px">מתנדב: ${
-              r.volunteer ? `${r.volunteer.username} (${r.volunteer.phone || '-'})` : '-'
-            }</div>
-            ${extra}
-          </div>
-        `;
-
-        const delBtn = document.createElement('button');
-        delBtn.className = 'button';
-        delBtn.textContent = 'מחק';
-        delBtn.onclick = async () => {
-          if (!confirm('למחוק את הבקשה?')) return;
-          await fetch(`/api/requests/delete/${r.id}/`, {
-            method: 'POST',
-            headers: { 'X-CSRFToken': CSRF },
-          });
-          loadClosedRequests();
-        };
-        div.appendChild(delBtn);
-
-        closedContainer.appendChild(div);
-      });
+      // Suggest route for selected requests
+      // הועבר פנימה ל-DOMContentLoaded
+      if (requestsContainer) hidePanel(requestsContainer);
     } catch (err) {
       console.error(err);
       closedContainer.innerHTML = '<p class="no-requests">שגיאה בטעינת בקשות סגורות.</p>';
     }
-  }
-
-  async function loadAcceptedRequests() {
-    if (!acceptedContainer) return;
-
-    showPanel(acceptedContainer);
-    hidePanel(requestsContainer);
-    hidePanel(closedContainer);
-
-    acceptedContainer.innerHTML = '<p>...טוען בקשות מאושרות</p>';
-    try {
-      const res = await fetch('/api/requests/accepted/');
-      const json = await safeJson(res);
-      if (json.__error) {
-        acceptedContainer.innerHTML = '<p class="no-requests">שגיאת שרת. נסה להתחבר מחדש.</p>';
-        return;
-      }
-      const reqs = json.requests || [];
-      acceptedContainer.innerHTML = '';
-
-      if (reqs.length === 0) {
-        acceptedContainer.innerHTML = '<p class="no-requests">אין בקשות מאושרות.</p>';
-        return;
-      }
-
-      reqs.forEach(r => {
-        const div = document.createElement('div');
-        div.className = 'request-card accepted';
-        div.innerHTML = `
-          <div class="request-info">
-            <div class="route">${formatRoute(r.pickup, r.destination)}</div>
-            <div class="status">${r.requested_time} · ${r.status_display}</div>
-            <div style="margin-top:6px">מטופל: ${r.sick_username} · ${r.phone || '-'}</div>
-            <div style="margin-top:6px">הערות: ${r.notes || '-'}</div>
-          </div>
-        `;
-
-        const doneBtn = document.createElement('button');
-        doneBtn.className = 'button';
-        doneBtn.textContent = 'טופל ומחק';
-        doneBtn.onclick = async () => {
-          if (!confirm('לסמן כטופל ולמחוק?')) return;
-          await fetch(`/api/requests/delete/${r.id}/`, {
-            method: 'POST',
-            headers: { 'X-CSRFToken': CSRF },
-          });
-          loadAcceptedRequests();
-        };
-
-        div.appendChild(doneBtn);
-        acceptedContainer.appendChild(div);
-      });
-    } catch (err) {
-      console.error(err);
-      acceptedContainer.innerHTML = '<p class="no-requests">שגיאה בטעינת בקשות מאושרות.</p>';
-    }
-  }
-
-  function refreshFromEvent() {
-    loadOpenRequests();
-    if (role === 'sick' && isVisible(closedContainer)) {
-      loadClosedRequests();
-    }
-    if (role === 'volunteer' && isVisible(acceptedContainer)) {
-      loadAcceptedRequests();
-    }
-  }
-
-  function connectRealtime() {
-    if (!role) return;
-
-    const wsScheme = window.location.protocol === 'https:' ? 'wss' : 'ws';
-    const wsUrl = `${wsScheme}://${window.location.host}/ws/requests/`;
-    let socket;
-    let reconnectTimer;
-
-    const connect = () => {
-      socket = new WebSocket(wsUrl);
-
-      socket.onmessage = event => {
-        try {
-          const payload = JSON.parse(event.data || '{}');
-          if (payload && payload.event) {
-            refreshFromEvent();
-          }
-        } catch (err) {
-          console.error('WS parse error', err);
-        }
-      };
-
-      socket.onclose = () => {
-        reconnectTimer = setTimeout(connect, 2000);
-      };
-
-      socket.onerror = () => {
-        if (socket && socket.readyState !== WebSocket.CLOSED) {
-          socket.close();
-        }
-      };
-    };
-
-    connect();
-
-    window.addEventListener('beforeunload', () => {
-      if (reconnectTimer) {
-        clearTimeout(reconnectTimer);
-      }
-      if (socket && socket.readyState === WebSocket.OPEN) {
-        socket.close();
-      }
-    });
-  }
-
-  if (showClosedBtn) {
-    showClosedBtn.onclick = async () => {
-      await loadClosedRequests();
-      showClosedBtn.style.display = 'none';
-      showOpenBtns.forEach(b => (b.style.display = 'inline-block'));
-      if (requestsContainer) hidePanel(requestsContainer);
-    };
-  }
-
-  if (showAcceptedBtn) {
-    showAcceptedBtn.onclick = async () => {
-      await loadAcceptedRequests();
-      showAcceptedBtn.style.display = 'none';
-      showOpenBtns.forEach(b => (b.style.display = 'inline-block'));
-      if (requestsContainer) hidePanel(requestsContainer);
-    };
   }
 
   showOpenBtns.forEach(b => {
@@ -417,23 +1466,287 @@ function hidePanel(el) {
   });
 
   if (createForm) {
+    if (pickupInput) {
+      pickupInput.addEventListener('input', () => {
+        if (pickupInput.__placesElement && Date.now() - (pickupInput.__lastSelectedAt || 0) < 2000) return;
+        createState.pickupValid = false;
+        if (pickupLatInput) pickupLatInput.value = '';
+        if (pickupLngInput) pickupLngInput.value = '';
+        if (pickupInput.dataset) {
+          delete pickupInput.dataset.lat;
+          delete pickupInput.dataset.lng;
+        }
+        setFieldError(pickupError, 'בחר כתובת מהרשימה.');
+        updateCreateSubmitState();
+      });
+    }
+
+    if (destinationInput) {
+      destinationInput.addEventListener('input', () => {
+        if (destinationInput.__placesElement && Date.now() - (destinationInput.__lastSelectedAt || 0) < 2000) return;
+        createState.destinationValid = false;
+        if (destLatInput) destLatInput.value = '';
+        if (destLngInput) destLngInput.value = '';
+        if (destinationInput.dataset) {
+          delete destinationInput.dataset.lat;
+          delete destinationInput.dataset.lng;
+        }
+        setFieldError(destinationError, 'בחר כתובת מהרשימה.');
+        updateCreateSubmitState();
+      });
+    }
+
+    if (phoneInput) {
+      phoneInput.addEventListener('input', () => {
+        const result = normalizeIsraeliPhone(phoneInput.value);
+        createState.phoneValid = result.valid;
+        if (!result.valid) {
+          setFieldError(phoneError, 'מספר טלפון לא תקין.');
+        } else {
+          setFieldError(phoneError, '');
+        }
+        updateCreateSubmitState();
+      });
+    }
+
+    if (timeInput) {
+      timeInput.addEventListener('input', () => {
+        createState.timeValid = Boolean(timeInput.value);
+        updateCreateSubmitState();
+      });
+    }
+
     createForm.onsubmit = async e => {
       e.preventDefault();
+      setCreateFormError('');
+      setCreateFormNotice('');
+      let pickupLatRaw = (pickupLatInput && pickupLatInput.value) || (pickupInput && pickupInput.dataset && pickupInput.dataset.lat) || '';
+      let pickupLngRaw = (pickupLngInput && pickupLngInput.value) || (pickupInput && pickupInput.dataset && pickupInput.dataset.lng) || '';
+      let destLatRaw = (destLatInput && destLatInput.value) || (destinationInput && destinationInput.dataset && destinationInput.dataset.lat) || '';
+      let destLngRaw = (destLngInput && destLngInput.value) || (destinationInput && destinationInput.dataset && destinationInput.dataset.lng) || '';
+      if (pickupLatInput && !pickupLatInput.value && pickupLatRaw) {
+        pickupLatInput.value = pickupLatRaw;
+      }
+      if (pickupLngInput && !pickupLngInput.value && pickupLngRaw) {
+        pickupLngInput.value = pickupLngRaw;
+      }
+      if (destLatInput && !destLatInput.value && destLatRaw) {
+        destLatInput.value = destLatRaw;
+      }
+      if (destLngInput && !destLngInput.value && destLngRaw) {
+        destLngInput.value = destLngRaw;
+      }
+      let pickupLat = Number(pickupLatRaw);
+      let pickupLng = Number(pickupLngRaw);
+      let destLat = Number(destLatRaw);
+      let destLng = Number(destLngRaw);
+      let hasPickupCoords = Boolean(pickupLatInput && pickupLatInput.value) && Number.isFinite(pickupLat) && pickupLat !== 0;
+      let hasDestCoords = Boolean(destLatInput && destLatInput.value) && Number.isFinite(destLat) && destLat !== 0;
+      const hasPickupText = Boolean(pickupInput && pickupInput.value);
+      const hasDestText = Boolean(destinationInput && destinationInput.value);
+      const hasTime = Boolean(timeInput && timeInput.value);
+
+      if (hasPickupText && !hasPickupCoords) {
+        const coords = await geocodeAddress(pickupInput.value);
+        if (coords) {
+          pickupLat = coords.lat;
+          pickupLng = coords.lng;
+          pickupLatRaw = String(coords.lat);
+          pickupLngRaw = String(coords.lng);
+          if (pickupLatInput) pickupLatInput.value = pickupLatRaw;
+          if (pickupLngInput) pickupLngInput.value = pickupLngRaw;
+          if (pickupInput && pickupInput.dataset) {
+            pickupInput.dataset.lat = pickupLatRaw;
+            pickupInput.dataset.lng = pickupLngRaw;
+          }
+          hasPickupCoords = true;
+        }
+      }
+
+      if (hasDestText && !hasDestCoords) {
+        const coords = await geocodeAddress(destinationInput.value);
+        if (coords) {
+          destLat = coords.lat;
+          destLng = coords.lng;
+          destLatRaw = String(coords.lat);
+          destLngRaw = String(coords.lng);
+          if (destLatInput) destLatInput.value = destLatRaw;
+          if (destLngInput) destLngInput.value = destLngRaw;
+          if (destinationInput && destinationInput.dataset) {
+            destinationInput.dataset.lat = destLatRaw;
+            destinationInput.dataset.lng = destLngRaw;
+          }
+          hasDestCoords = true;
+        }
+      }
+
+      if (!hasPickupText || !hasDestText || !hasPickupCoords || !hasDestCoords || !hasTime) {
+        createState.pickupValid = hasPickupText && hasPickupCoords;
+        createState.destinationValid = hasDestText && hasDestCoords;
+        createState.timeValid = hasTime;
+      }
+
+      if (!createState.pickupValid || !createState.destinationValid || !createState.phoneValid || !createState.timeValid) {
+        setFieldError(pickupError, createState.pickupValid ? '' : 'בחר כתובת מהרשימה.');
+        setFieldError(destinationError, createState.destinationValid ? '' : 'בחר כתובת מהרשימה.');
+        if (!createState.phoneValid) {
+          setFieldError(phoneError, 'מספר טלפון לא תקין.');
+        }
+        if (timeInput && !createState.timeValid) {
+          timeInput.reportValidity();
+        }
+        return;
+      }
+
+      const phoneResult = normalizeIsraeliPhone(phoneInput.value);
+      if (!phoneResult.valid) {
+        setFieldError(phoneError, 'מספר טלפון לא תקין.');
+        return;
+      }
+
       const payload = {
         pickup: createForm.querySelector('[name=pickup]').value,
         destination: createForm.querySelector('[name=destination]').value,
         time: createForm.querySelector('[name=time]').value,
         notes: createForm.querySelector('[name=notes]').value,
-        phone: createForm.querySelector('[name=phone]').value,
-        pickup_lat: createForm.querySelector('[name=pickup_lat]').value,
-        pickup_lng: createForm.querySelector('[name=pickup_lng]').value,
-        dest_lat: createForm.querySelector('[name=dest_lat]').value,
-        dest_lng: createForm.querySelector('[name=dest_lng]').value,
+        phone: phoneResult.normalized,
+        pickup_lat: pickupLatRaw,
+        pickup_lng: pickupLngRaw,
+        dest_lat: destLatRaw,
+        dest_lng: destLngRaw,
       };
 
       try {
         const res = await fetch('/api/requests/create/', {
           method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCookie('csrftoken') },
+          body: JSON.stringify(payload),
+        });
+        const json = await safeJson(res);
+        if (json.__error) {
+          setCreateFormError('שגיאת שרת. נסה להתחבר מחדש.');
+          return;
+        }
+
+        if (json.success) {
+          createForm.reset();
+          createState.pickupValid = false;
+          createState.destinationValid = false;
+          createState.phoneValid = false;
+          createState.timeValid = false;
+          setFieldError(pickupError, '');
+          setFieldError(destinationError, '');
+          setFieldError(phoneError, '');
+          if (pickupInput) {
+            pickupInput.value = '';
+            if (pickupInput.__placesElement) {
+              pickupInput.__placesElement.value = '';
+            }
+          }
+          if (destinationInput) {
+            destinationInput.value = '';
+            if (destinationInput.__placesElement) {
+              destinationInput.__placesElement.value = '';
+            }
+          }
+          if (pickupLatInput) pickupLatInput.value = '';
+          if (pickupLngInput) pickupLngInput.value = '';
+          if (destLatInput) destLatInput.value = '';
+          if (destLngInput) destLngInput.value = '';
+          if (pickupInput && pickupInput.dataset) {
+            delete pickupInput.dataset.lat;
+            delete pickupInput.dataset.lng;
+          }
+          if (destinationInput && destinationInput.dataset) {
+            delete destinationInput.dataset.lat;
+            delete destinationInput.dataset.lng;
+          }
+          if (patientPickupMarker && patientMap) {
+            patientMap.removeLayer(patientPickupMarker);
+            patientPickupMarker = null;
+          }
+          if (patientDestMarker && patientMap) {
+            patientMap.removeLayer(patientDestMarker);
+            patientDestMarker = null;
+          }
+          if (patientMap) {
+            patientMap.setView([32.0853, 34.7818], 11);
+          }
+          updateCreateSubmitState();
+          setCreateFormNotice('הבקשה נשלחה בהצלחה.');
+          setTimeout(() => setCreateFormNotice(''), 3500);
+          await loadOpenRequests();
+        } else {
+          const message = json.error || 'נכשל ביצירת בקשה';
+          if (message.toLowerCase().includes('pickup address')) {
+            setFieldError(pickupError, 'בחר כתובת מהרשימה.');
+            createState.pickupValid = false;
+            updateCreateSubmitState();
+          } else if (message.toLowerCase().includes('destination address')) {
+            setFieldError(destinationError, 'בחר כתובת מהרשימה.');
+            createState.destinationValid = false;
+            updateCreateSubmitState();
+          }
+          setCreateFormError(message);
+        }
+      } catch (err) {
+        console.error(err);
+        setCreateFormError('בעיית תקשורת');
+      }
+    };
+  }
+
+  if (editModal) {
+    editModal.addEventListener('click', e => {
+      if (e.target && e.target.dataset && e.target.dataset.close === 'true') {
+        closeEditModal();
+      }
+    });
+  }
+
+  if (editPickupInput) {
+    editPickupInput.addEventListener('input', () => {
+      editState.pickupValid = false;
+      if (editPickupLat) editPickupLat.value = '';
+      if (editPickupLng) editPickupLng.value = '';
+      setFieldError(editPickupError, 'בחר כתובת מהרשימה.');
+      updateEditSubmitState();
+    });
+  }
+
+  if (editDestinationInput) {
+    editDestinationInput.addEventListener('input', () => {
+      editState.destinationValid = false;
+      if (editDestLat) editDestLat.value = '';
+      if (editDestLng) editDestLng.value = '';
+      setFieldError(editDestinationError, 'בחר כתובת מהרשימה.');
+      updateEditSubmitState();
+    });
+  }
+
+  if (editForm) {
+    editForm.addEventListener('submit', async e => {
+      e.preventDefault();
+      if (!editState.pickupValid || !editState.destinationValid) {
+        setFieldError(editPickupError, editState.pickupValid ? '' : 'בחר כתובת מהרשימה.');
+        setFieldError(editDestinationError, editState.destinationValid ? '' : 'בחר כתובת מהרשימה.');
+        return;
+      }
+
+      const payload = {
+        pickup: editPickupInput.value,
+        destination: editDestinationInput.value,
+        time: editTimeInput.value,
+        notes: editNotesInput.value,
+        pickup_lat: editPickupLat.value,
+        pickup_lng: editPickupLng.value,
+        dest_lat: editDestLat.value,
+        dest_lng: editDestLng.value,
+      };
+
+      try {
+        const res = await fetch(`/api/requests/update/${editRequestId.value}/`, {
+          method: 'PATCH',
           headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF },
           body: JSON.stringify(payload),
         });
@@ -444,16 +1757,28 @@ function hidePanel(el) {
         }
 
         if (json.success) {
-          createForm.reset();
+          closeEditModal();
           await loadOpenRequests();
         } else {
-          alert(json.error || 'נכשל ביצירת בקשה');
+          alert(json.error || 'נכשל בעדכון הבקשה');
         }
       } catch (err) {
         console.error(err);
         alert('בעיית תקשורת');
       }
-    };
+    });
+  }
+
+  if (routeSuggestBtn) {
+    routeSuggestBtn.addEventListener('click', suggestRoute);
+  }
+
+  if (routeNavBtn) {
+    routeNavBtn.addEventListener('click', () => {
+      if (routeNavBtn.dataset.url) {
+        window.open(routeNavBtn.dataset.url, '_blank', 'noopener');
+      }
+    });
   }
 
   if (role === 'volunteer') {
@@ -461,4 +1786,5 @@ function hidePanel(el) {
   }
   connectRealtime();
   loadOpenRequests();
-});
+}); // סוף DOMContentLoaded
+
