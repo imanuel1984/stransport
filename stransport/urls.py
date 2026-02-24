@@ -1,7 +1,9 @@
 from django.urls import path
 from . import views
+from .views import FaviconView
 
 urlpatterns = [
+    path('favicon.ico', FaviconView.as_view(), name='favicon'),
     path("", views.home, name="home"),
     path("signup/", views.signup, name="signup"),
     path("api/requests/", views.requests_api, name="requests_api"),
@@ -12,6 +14,9 @@ urlpatterns = [
     path("api/requests/accepted/", views.accepted_requests_api, name="accepted_requests_api"),
     path("api/requests/closed/", views.closed_requests_api, name="closed_requests_api"),
     path("api/requests/delete/<int:req_id>/", views.delete_request_api, name="delete_request_api"),
+    path("api/requests/update/<int:req_id>/", views.update_request_api, name="update_request_api"),
     path("api/requests/summary/<int:req_id>/", views.generate_summary_api, name="generate_summary_api"),
+    path("api/route/suggest/", views.suggest_route_api, name="suggest_route_api"),
+    path("api/route/links/", views.route_links_api, name="route_links_api"),
 
 ]

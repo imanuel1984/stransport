@@ -32,17 +32,42 @@
 <h2>כניסה</h2>
 {% if form.errors %}
 <div class="panel" style="border:1px solid #ef4444;background:#fef2f2;padding:12px;border-radius:8px;margin:12px 0;">
-  <strong>יש שגיאה בהתחברות:</strong>
-  {{ form.errors }}
+  <strong>שם משתמש או סיסמה שגויים.</strong>
 </div>
 {% endif %}
 <form method="post">
     {% csrf_token %}
     <label>שם משתמש:</label>
-    <input type="text" name="username" required><br>
+    <input type="text" name="username" value="{{ form.username.value|default_if_none:'' }}" autocomplete="username" required><br>
     <label>סיסמא:</label>
-    <input type="password" name="password" required><br>
-    <button type="submit" id="login-btn">כניסה</button>
+    <input type="password" name="password" minlength="8" autocomplete="current-password" required><br>
+    <div class="field-error" id="login-password-error"></div>
+    <button type="submit" id="login-btn" disabled>כניסה</button>
 </form>
+<script>
+  const loginForm = document.querySelector('form[method="post"]');
+  const loginBtn = document.getElementById('login-btn');
+  const usernameInput = loginForm ? loginForm.querySelector('input[name="username"]') : null;
+  const passwordInput = loginForm ? loginForm.querySelector('input[name="password"]') : null;
+  const passwordError = document.getElementById('login-password-error');
+
+  function updateLoginButton() {
+    if (!loginBtn || !usernameInput || !passwordInput) return;
+    const userOk = Boolean(usernameInput.value);
+    const passOk = passwordInput.value.length >= 8;
+    loginBtn.disabled = !(userOk && passOk);
+    if (passwordError) {
+      passwordError.textContent = passOk || !passwordInput.value ? '' : 'הסיסמה חייבת להיות לפחות 8 תווים.';
+    }
+  }
+
+  if (usernameInput) {
+    usernameInput.addEventListener('input', updateLoginButton);
+  }
+  if (passwordInput) {
+    passwordInput.addEventListener('input', updateLoginButton);
+  }
+  updateLoginButton();
+</script>
 <p>אין לך חשבון? <a href="{% url 'signup' %}">הירשם</a></p>
 {% endblock %}

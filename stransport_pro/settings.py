@@ -82,6 +82,7 @@ TEMPLATES = [
                 "django.template.context_processors.request",
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
+                "stransport.context_processors.google_places_api_key",
             ],
         },
     },
@@ -180,15 +181,24 @@ STATIC_ROOT = os.environ.get("STATIC_ROOT", str(BASE_DIR / "staticfiles"))
 STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
 
 # Channels (WebSockets)
-REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
-CHANNEL_LAYERS = {
-    "default": {
-        "BACKEND": "channels_redis.core.RedisChannelLayer",
-        "CONFIG": {
-            "hosts": [REDIS_URL],
-        },
+REDIS_URL = os.environ.get("REDIS_URL", "").strip()
+USE_INMEMORY_CHANNELS = os.environ.get("USE_INMEMORY_CHANNELS", "False").lower() in {"1", "true", "yes"}
+
+if USE_INMEMORY_CHANNELS or not REDIS_URL:
+    CHANNEL_LAYERS = {
+        "default": {
+            "BACKEND": "channels.layers.InMemoryChannelLayer",
+        }
     }
-}
+else:
+    CHANNEL_LAYERS = {
+        "default": {
+            "BACKEND": "channels_redis.core.RedisChannelLayer",
+            "CONFIG": {
+                "hosts": [REDIS_URL],
+            },
+        }
+    }
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
@@ -214,6 +224,12 @@ CELERY_BEAT_SCHEDULE = {
 
 # AI (optional)
 AI_API_KEY = os.environ.get("AI_API_KEY", "")
+
+# Google Places (optional)
+GOOGLE_PLACES_API_KEY = os.environ.get("GOOGLE_PLACES_API_KEY", "")
+
+# OSRM (route matrix)
+OSRM_BASE_URL = os.environ.get("OSRM_BASE_URL", "https://router.project-osrm.org")
 
 # Logging
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO")

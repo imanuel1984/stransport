@@ -15,8 +15,8 @@ class TransportAppTests(TestCase):
         self.sick_user = User.objects.create_user(username="patient1", password="1234")
         self.volunteer_user = User.objects.create_user(username="volunteer1", password="1234")
 
-        Profile.objects.create(user=self.sick_user, role="sick", phone="111-222")
-        Profile.objects.create(user=self.volunteer_user, role="volunteer", phone="333-444")
+        Profile.objects.create(user=self.sick_user, role="sick", phone="050-1234567")
+        Profile.objects.create(user=self.volunteer_user, role="volunteer", phone="052-7654321")
 
         self.client = Client()
 
@@ -47,7 +47,11 @@ class TransportAppTests(TestCase):
             "destination": "Clinic",
             "time": (timezone.now() + timedelta(hours=1)).isoformat(),
             "notes": "Need help",
-            "phone": "555-000",
+            "phone": "050-1234567",
+            "pickup_lat": 32.0853,
+            "pickup_lng": 34.7818,
+            "dest_lat": 32.0853,
+            "dest_lng": 34.7818,
         }
         response = self.client.post(
             reverse("create_request_api"),
@@ -124,3 +128,51 @@ class TransportAppTests(TestCase):
         self.assertEqual(req.status, "cancelled")
         self.assertTrue(req.no_volunteers_available)
         self.assertEqual(req.cancel_reason, "no_volunteers")
+
+    def test_route_links_valid(self):
+        self.login_volunteer()
+        payload = {
+            "start": {"lat": 32.0853, "lng": 34.7818},
+            "stops": [
+                {"lat": 32.08, "lng": 34.78},
+                {"lat": 32.09, "lng": 34.79},
+                {"lat": 32.10, "lng": 34.80},
+            ],
+        }
+        response = self.client.post(
+            reverse("route_links_api"),
+            json.dumps(payload),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertIn("google_full_route", data)
+        self.assertEqual(len(data["google_legs"]), 3)
+        self.assertEqual(len(data["waze_legs"]), 3)
+
+    def test_route_links_invalid_coordinate(self):
+        self.login_volunteer()
+        payload = {
+            "start": {"lat": 132.0, "lng": 34.7818},
+            "stops": [{"lat": 32.08, "lng": 34.78}],
+        }
+        response = self.client.post(
+            reverse("route_links_api"),
+            json.dumps(payload),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_route_links_truncation(self):
+        self.login_volunteer()
+        stops = [{"lat": 32.0 + i * 0.01, "lng": 34.0 + i * 0.01} for i in range(12)]
+        payload = {"start": {"lat": 32.0853, "lng": 34.7818}, "stops": stops}
+        response = self.client.post(
+            reverse("route_links_api"),
+            json.dumps(payload),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(len(data["google_legs"]), 10)
+        self.assertEqual(data["warning"], "Too many stops. Limited to 10.")

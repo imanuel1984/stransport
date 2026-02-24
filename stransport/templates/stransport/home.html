@@ -12,17 +12,29 @@
 <div class="panel" id="sick-panel">
   <form id="create-request-form">
     <input type="hidden" name="csrfmiddlewaretoken" value="{{ csrf_token }}">
-    <input type="text" name="pickup" placeholder="כתובת איסוף" required>
-    <input type="text" name="destination" placeholder="יעד" required>
+    <div class="autocomplete-wrap" id="pickup-autocomplete"></div>
+    <input type="text" id="pickup-input" name="pickup" placeholder="כתובת איסוף" required>
+    <div class="field-hint">בחר כתובת מתוך ההצעות.</div>
+    <div class="field-error" id="pickup-error"></div>
+    <input type="hidden" id="pickup-lat" name="pickup_lat">
+    <input type="hidden" id="pickup-lng" name="pickup_lng">
+
+    <div class="autocomplete-wrap" id="destination-autocomplete"></div>
+    <input type="text" id="destination-input" name="destination" placeholder="יעד" required>
+    <div class="field-hint">בחר כתובת מתוך ההצעות.</div>
+    <div class="field-error" id="destination-error"></div>
+    <input type="hidden" id="dest-lat" name="dest_lat">
+    <input type="hidden" id="dest-lng" name="dest_lng">
+
     <input type="datetime-local" name="time" required>
     <input type="text" name="notes" placeholder="הערות">
-    <input type="text" name="phone" placeholder="מספר טלפון" required>
-    <input type="number" name="pickup_lat" step="any" placeholder="קו רוחב איסוף (אופציונלי)">
-    <input type="number" name="pickup_lng" step="any" placeholder="קו אורך איסוף (אופציונלי)">
-    <input type="number" name="dest_lat" step="any" placeholder="קו רוחב יעד (אופציונלי)">
-    <input type="number" name="dest_lng" step="any" placeholder="קו אורך יעד (אופציונלי)">
+    <input type="text" id="phone-input" name="phone" placeholder="מספר טלפון" required>
+    <div class="field-error" id="phone-error"></div>
     <button type="submit" class="new-request-btn">ליצור בקשה</button>
   </form>
+
+  <button type="button" class="button" id="toggle-patient-map">הסתר מפה</button>
+  <div id="patient-map" class="requests-map"></div>
 
   <div style="margin-top:12px;">
     <button id="show-closed-btn" class="button">להראות בקשות מבוטלות/סגורות</button>
@@ -41,17 +53,78 @@
     <button id="show-accepted-btn" class="button">להראות בקשות מאושרות שלי</button>
     <button id="show-open-btn" class="button" style="display:none;">חזרה לבקשות פתוחות</button>
   </div>
+  <div class="route-panel">
+    <div class="route-panel-row">
+      <label class="route-label" for="route-start-input">נקודת התחלה</label>
+      <div class="autocomplete-wrap" id="route-start-autocomplete"></div>
+      <input type="text" id="route-start-input" placeholder="כתובת התחלה" required>
+      <div class="field-hint">בחר כתובת מתוך ההצעות או השתמש במיקום שלי.</div>
+      <input type="hidden" id="route-start-lat">
+      <input type="hidden" id="route-start-lng">
+      <button type="button" class="button" id="route-use-location">השתמש במיקום שלי</button>
+    </div>
+    <div class="route-panel-row">
+      <label class="route-label" for="route-mode">מצב מסלול</label>
+      <select id="route-mode">
+        <option value="pickup_only">איסופים בלבד (ללא נקודות יעד)</option>
+        <option value="pickup_then_dropoff">איסוף ואז יעד</option>
+      </select>
+    </div>
+    <div class="route-panel-actions">
+      <button type="button" class="btn-primary" id="route-suggest-btn" disabled>Suggest best route</button>
+      <button type="button" class="button" id="route-nav-btn" disabled>Start navigation</button>
+    </div>
+    <div class="field-hint" id="route-notice"></div>
+    <div class="field-error" id="route-error"></div>
+    <div id="route-results" class="route-results"></div>
+  </div>
+  <button type="button" class="button" id="toggle-volunteer-map">הסתר מפה</button>
   <div id="requests-map" class="requests-map"></div>
   <div id="requests-container"></div>
   <div id="accepted-requests-container" style="display:none;"></div>
 </div>
 {% endif %}
+
+{% if current_user.profile.role == "sick" %}
+<div class="modal" id="edit-modal" aria-hidden="true">
+  <div class="modal-backdrop" data-close="true"></div>
+  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="edit-modal-title">
+    <div class="modal-header">
+      <h3 id="edit-modal-title">עריכת בקשה</h3>
+      <button type="button" class="modal-close" data-close="true">×</button>
+    </div>
+    <form id="edit-request-form">
+      <input type="hidden" name="request_id" id="edit-request-id">
+
+      <label for="edit-pickup-input">כתובת איסוף</label>
+      <div class="autocomplete-wrap" id="edit-pickup-autocomplete"></div>
+      <input type="text" id="edit-pickup-input" name="pickup" required>
+      <div class="field-hint">בחר כתובת מתוך ההצעות.</div>
+      <div class="field-error" id="edit-pickup-error"></div>
+      <input type="hidden" id="edit-pickup-lat" name="pickup_lat">
+      <input type="hidden" id="edit-pickup-lng" name="pickup_lng">
+
+      <label for="edit-destination-input">יעד</label>
+      <div class="autocomplete-wrap" id="edit-destination-autocomplete"></div>
+      <input type="text" id="edit-destination-input" name="destination" required>
+      <div class="field-hint">בחר כתובת מתוך ההצעות.</div>
+      <div class="field-error" id="edit-destination-error"></div>
+      <input type="hidden" id="edit-dest-lat" name="dest_lat">
+      <input type="hidden" id="edit-dest-lng" name="dest_lng">
+
+      <label for="edit-time-input">זמן</label>
+      <input type="datetime-local" id="edit-time-input" name="time" required>
+
+      <label for="edit-notes-input">הערות</label>
+      <input type="text" id="edit-notes-input" name="notes">
+
+      <div class="modal-actions">
+        <button type="button" class="button" data-close="true">ביטול</button>
+        <button type="submit" class="btn-primary" id="edit-submit-btn" disabled>שמירה</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endif %}
 {% endblock %}
 
-{% load static %}
-<script src="{% static 'stransport/stransport.js' %}" defer></script>
-<script>
-window.currentUserRole = "{{ current_user.profile.role|default:'' }}";
-window.currentUserId = "{{ current_user.id|default:'' }}";
-window.currentUserUsername = "{{ current_user.username|escapejs }}";
-</script>

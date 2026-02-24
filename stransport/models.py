@@ -1,6 +1,8 @@
 from django.db import models
 from django.contrib.auth.models import User
+from django.core.exceptions import ValidationError
 from django.utils import timezone
+import re
 
 class Profile(models.Model):
     ROLE_CHOICES = [
@@ -13,6 +15,32 @@ class Profile(models.Model):
 
     def __str__(self):
         return f"{self.user.username} ({self.get_role_display()})"
+
+    def clean(self):
+        if self.phone:
+            self.phone = normalize_israeli_phone(self.phone)
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+
+def normalize_israeli_phone(value):
+    raw = value.strip()
+    digits = re.sub(r"\D", "", raw)
+
+    if digits.startswith("972"):
+        digits = digits[3:]
+    if digits.startswith("0"):
+        digits = digits[1:]
+
+    if not digits or len(digits) not in {8, 9}:
+        raise ValidationError("Invalid Israeli phone number")
+
+    if digits[0] not in "2345789":
+        raise ValidationError("Invalid Israeli phone number")
+
+    return f"+972{digits}"
 
 
 class TransportRequest(models.Model):

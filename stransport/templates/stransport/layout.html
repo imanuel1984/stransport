@@ -6,13 +6,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}מערכת הסעות{% endblock %}</title>
 
+  <link rel="icon" href="data:,">
+
   <link rel="stylesheet" href="{% static 'stransport/stransport.css' %}">
-  <link
-    rel="stylesheet"
-    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-    integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
-    crossorigin=""
-  >
+  <link rel="stylesheet" href="{% static 'stransport/css/leaflet.css' %}">
   <script
     src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
     integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
@@ -20,11 +17,28 @@
     defer
   ></script>
   <script>
+    window.__placesReady = false;
+    window.__placesInit = null;
+    window.initPlaces = function initPlaces() {
+      window.__placesReady = true;
+      if (typeof window.__placesInit === 'function') {
+        window.__placesInit();
+      }
+    };
+  </script>
+  {% if google_places_api_key %}
+  <script
+    src="https://maps.googleapis.com/maps/api/js?key={{ google_places_api_key }}&libraries=places&callback=initPlaces&loading=async&v=weekly&region=IL&language=iw"
+    async
+    defer
+  ></script>
+  {% endif %}
+  <script>
     window.currentUserRole = "{{ current_user.profile.role|default:'' }}";
     window.currentUserId = "{{ current_user.id|default:'' }}";
     window.currentUserUsername = "{{ current_user.username|escapejs }}";
   </script>
-  <script src="{% static 'stransport/stransport.js' %}?v=20260211" defer></script>
+  <script src="{% static 'stransport/stransport.js' %}?v=20260220" defer></script>
 </head>
 <body>
   <nav>

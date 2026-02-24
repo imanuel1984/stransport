@@ -1,4 +1,15 @@
 from channels.generic.websocket import AsyncJsonWebsocketConsumer
+from channels.db import database_sync_to_async
+from django.apps import apps
+
+
+@database_sync_to_async
+def get_user_role(user_id):
+    Profile = apps.get_model("stransport", "Profile")
+    try:
+        return Profile.objects.get(user_id=user_id).role
+    except Profile.DoesNotExist:
+        return ""
 
 
 class RequestsConsumer(AsyncJsonWebsocketConsumer):
@@ -8,7 +19,7 @@ class RequestsConsumer(AsyncJsonWebsocketConsumer):
             await self.close()
             return
 
-        role = getattr(getattr(user, "profile", None), "role", "")
+        role = await get_user_role(user.id)
         if role == "volunteer":
             await self.channel_layer.group_add("volunteers", self.channel_name)
         elif role == "sick":
@@ -21,7 +32,7 @@ class RequestsConsumer(AsyncJsonWebsocketConsumer):
         if not user or not user.is_authenticated:
             return
 
-        role = getattr(getattr(user, "profile", None), "role", "")
+        role = await get_user_role(user.id)
         if role == "volunteer":
             await self.channel_layer.group_discard("volunteers", self.channel_name)
         elif role == "sick":
