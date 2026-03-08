@@ -743,6 +743,15 @@ a.button:hover {
 }
 
 @media (max-width: 720px) {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+  }
+
   main {
     margin: 20px 12px 40px;
     padding: 20px 18px 24px;
@@ -752,6 +761,29 @@ a.button:hover {
     flex-direction: column;
     gap: 8px;
     align-items: flex-start;
+    padding-left: max(14px, env(safe-area-inset-left));
+    padding-right: max(14px, env(safe-area-inset-right));
+  }
+
+  /* כפתורים ולחיצות נוחים באצבע (מינימום ~44px) */
+  nav a,
+  button,
+  .button,
+  .btn-primary,
+  .new-request-btn {
+    min-height: 44px;
+    min-width: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    -webkit-tap-highlight-color: rgba(0, 0, 0, 0.1);
+  }
+
+  /* iOS: מניעת זום אוטומטי focus על שדות (גודל 16px+) */
+  input,
+  select,
+  textarea {
+    font-size: 16px !important;
   }
 
   .requests-map {
