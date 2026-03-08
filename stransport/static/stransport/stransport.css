@@ -274,6 +274,8 @@ form input:focus, form textarea:focus, form select:focus {
   display: flex;
   align-items: center;
   justify-content: center;
+  z-index: 2;
+  -webkit-tap-highlight-color: transparent;
 }
 [dir="rtl"] .password-toggle-btn {
   left: auto;
@@ -789,6 +791,25 @@ a.button:hover {
   .requests-map {
     height: 320px !important;
     max-height: 320px !important;
+  }
+
+  /* עיניית סיסמה – גדול ונוח למובייל */
+  .password-toggle-wrap {
+    max-width: 100%;
+  }
+  .password-toggle-btn {
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    min-height: 44px;
+    font-size: 1.25rem;
+    right: 4px;
+  }
+  [dir="rtl"] .password-toggle-wrap input {
+    padding-right: 48px;
+  }
+  .password-toggle-wrap input {
+    padding-left: 12px;
   }
 }
 
