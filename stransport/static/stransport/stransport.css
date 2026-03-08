@@ -287,6 +287,14 @@ form input:focus, form textarea:focus, form select:focus {
   color: #334155;
   background: #e2e8f0;
 }
+.password-toggle-btn .pw-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.password-toggle-btn .pw-icon svg {
+  display: block;
+}
 
 button:disabled,
 .btn-primary:disabled,
