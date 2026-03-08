@@ -40,7 +40,10 @@
     <label>שם משתמש:</label>
     <input type="text" name="username" value="{{ form.username.value|default_if_none:'' }}" autocomplete="username" required><br>
     <label>סיסמא:</label>
-    <input type="password" name="password" minlength="8" autocomplete="current-password" required><br>
+    <div class="password-toggle-wrap">
+      <input type="password" name="password" id="login-password-input" minlength="8" autocomplete="current-password" required>
+      <button type="button" class="password-toggle-btn" id="login-password-toggle" aria-label="הצג סיסמה" title="הצג/הסתר סיסמה">👁</button>
+    </div><br>
     <div class="field-error" id="login-password-error"></div>
     <button type="submit" id="login-btn" disabled>כניסה</button>
 </form>
@@ -48,8 +51,18 @@
   const loginForm = document.querySelector('form[method="post"]');
   const loginBtn = document.getElementById('login-btn');
   const usernameInput = loginForm ? loginForm.querySelector('input[name="username"]') : null;
-  const passwordInput = loginForm ? loginForm.querySelector('input[name="password"]') : null;
+  const passwordInput = document.getElementById('login-password-input');
   const passwordError = document.getElementById('login-password-error');
+  const passwordToggle = document.getElementById('login-password-toggle');
+
+  if (passwordToggle && passwordInput) {
+    passwordToggle.addEventListener('click', function() {
+      const isPass = passwordInput.type === 'password';
+      passwordInput.type = isPass ? 'text' : 'password';
+      passwordToggle.setAttribute('aria-label', isPass ? 'הסתר סיסמה' : 'הצג סיסמה');
+      passwordToggle.textContent = isPass ? '🙈' : '👁';
+    });
+  }
 
   function updateLoginButton() {
     if (!loginBtn || !usernameInput || !passwordInput) return;

@@ -26,14 +26,20 @@
   {{ form.username }}
 
   <label>סיסמה</label>
-  {{ form.password1 }}
+  <div class="password-toggle-wrap">
+    {{ form.password1 }}
+    <button type="button" class="password-toggle-btn" id="signup-password1-toggle" aria-label="הצג סיסמה" title="הצג/הסתר סיסמה">👁</button>
+  </div>
   <div class="field-error" id="password1-error"></div>
   <div class="muted" style="margin:4px 0 10px;">
     סיסמה צריכה להיות לפחות 8 תווים, לא נפוצה, ולא דומה לשם המשתמש.
   </div>
 
   <label>אימות סיסמה</label>
-  {{ form.password2 }}
+  <div class="password-toggle-wrap">
+    {{ form.password2 }}
+    <button type="button" class="password-toggle-btn" id="signup-password2-toggle" aria-label="הצג סיסמה" title="הצג/הסתר סיסמה">👁</button>
+  </div>
   <div class="field-error" id="password2-error"></div>
 
   <label>תפקיד</label>
@@ -70,6 +76,20 @@
   const submitBtn = document.getElementById("signup-submit");
   const password1Error = document.getElementById("password1-error");
   const password2Error = document.getElementById("password2-error");
+
+  function setupPasswordToggle(btnId, input) {
+    const btn = document.getElementById(btnId);
+    if (!btn || !input) return;
+    btn.addEventListener("click", function() {
+      const isPass = input.type === "password";
+      input.type = isPass ? "text" : "password";
+      btn.setAttribute("aria-label", isPass ? "הסתר סיסמה" : "הצג סיסמה");
+      btn.textContent = isPass ? "🙈" : "👁";
+    });
+  }
+  setupPasswordToggle("signup-password1-toggle", password1);
+  setupPasswordToggle("signup-password2-toggle", password2);
+
   if (!dd || !select) return;
 
   const trigger = dd.querySelector(".role-dd-trigger");
