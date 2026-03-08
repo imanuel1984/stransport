@@ -241,49 +241,51 @@ form input:focus, form textarea:focus, form select:focus {
   min-height: 18px;
 }
 
-/* עיניית הצגת/הסתרת סיסמה */
+/* עיניית הצגת/הסתרת סיסמה – flex כדי שהכפתור תמיד נראה (גם במובייל) */
 .password-toggle-wrap {
-  position: relative;
-  display: inline-block;
+  display: flex;
+  align-items: center;
   width: 100%;
   max-width: 280px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #fff;
+  overflow: hidden;
+}
+[dir="rtl"] .password-toggle-wrap {
+  flex-direction: row-reverse;
 }
 .password-toggle-wrap input {
-  padding-left: 40px;
-  width: 100%;
-  box-sizing: border-box;
+  flex: 1;
+  min-width: 0;
+  border: none;
+  padding: 10px 12px;
+  font-size: 1rem;
+  background: transparent;
 }
-[dir="rtl"] .password-toggle-wrap input {
-  padding-left: 8px;
-  padding-right: 40px;
+.password-toggle-wrap input:focus {
+  outline: none;
 }
 .password-toggle-btn {
-  position: absolute;
-  top: 50%;
-  transform: translateY(-50%);
-  left: 8px;
-  width: 32px;
-  height: 32px;
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
   padding: 0;
   border: none;
-  background: transparent;
+  background: #f1f5f9;
   cursor: pointer;
   color: #64748b;
-  font-size: 1.1rem;
-  border-radius: 4px;
+  font-size: 1.25rem;
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 2;
   -webkit-tap-highlight-color: transparent;
-}
-[dir="rtl"] .password-toggle-btn {
-  left: auto;
-  right: 8px;
 }
 .password-toggle-btn:hover {
   color: #334155;
-  background: #f1f5f9;
+  background: #e2e8f0;
 }
 
 button:disabled,
@@ -793,23 +795,9 @@ a.button:hover {
     max-height: 320px !important;
   }
 
-  /* עיניית סיסמה – גדול ונוח למובייל */
+  /* עיניית סיסמה – רוחב מלא במובייל */
   .password-toggle-wrap {
     max-width: 100%;
-  }
-  .password-toggle-btn {
-    width: 44px;
-    height: 44px;
-    min-width: 44px;
-    min-height: 44px;
-    font-size: 1.25rem;
-    right: 4px;
-  }
-  [dir="rtl"] .password-toggle-wrap input {
-    padding-right: 48px;
-  }
-  .password-toggle-wrap input {
-    padding-left: 12px;
   }
 }
 
