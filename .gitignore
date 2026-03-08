@@ -16,6 +16,8 @@ build/
 # Django
 *.log
 db.sqlite3
+celerybeat-schedule
+celerybeat.pid
 db.sqlite3-journal
 /media
 /staticfiles
@@ -44,3 +46,7 @@ htmlcov/
 
 # Node (if any frontend tooling added later)
 node_modules/
+
+# WhatsApp automation – סשן ומטמון (הקוד עולה ל-git)
+whatsapp_morning/.wwebjs_auth/
+whatsapp_morning/.wwebjs_cache/
