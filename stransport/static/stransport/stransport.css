@@ -241,16 +241,23 @@ form input:focus, form textarea:focus, form select:focus {
   min-height: 18px;
 }
 
-/* עיניית הצגת/הסתרת סיסמה – flex כדי שהכפתור תמיד נראה (גם במובייל) */
+/* עיניית סיסמה – מלבן אחד, עיניית ממורכזת בסימטריה */
 .password-toggle-wrap {
   display: flex;
   align-items: center;
   width: 100%;
-  max-width: 280px;
-  border: 1px solid #cbd5e1;
-  border-radius: 8px;
+  max-width: 100%;
+  margin: 8px 0;
+  padding: 0;
+  border: 1px solid rgba(15, 23, 42, 0.15);
+  border-radius: 10px;
   background: #fff;
   overflow: hidden;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.password-toggle-wrap:focus-within {
+  border-color: var(--accent-2);
+  box-shadow: 0 0 0 4px rgba(20, 184, 166, 0.15);
 }
 [dir="rtl"] .password-toggle-wrap {
   flex-direction: row-reverse;
@@ -258,42 +265,49 @@ form input:focus, form textarea:focus, form select:focus {
 .password-toggle-wrap input {
   flex: 1;
   min-width: 0;
-  border: none;
-  padding: 10px 12px;
+  height: 42px;
+  margin: 0;
+  padding: 0 14px;
   font-size: 1rem;
+  font-family: inherit;
+  border: none;
   background: transparent;
+  transition: none;
 }
 .password-toggle-wrap input:focus {
   outline: none;
 }
 .password-toggle-btn {
   flex-shrink: 0;
-  width: 44px;
-  height: 44px;
-  min-width: 44px;
-  min-height: 44px;
+  width: 46px;
+  height: 42px;
+  margin: 0;
   padding: 0;
   border: none;
-  background: #f1f5f9;
+  background: transparent;
   cursor: pointer;
   color: #64748b;
-  font-size: 1.25rem;
   display: flex;
   align-items: center;
   justify-content: center;
   -webkit-tap-highlight-color: transparent;
-}
-.password-toggle-btn:hover {
-  color: #334155;
-  background: #e2e8f0;
+  transition: color 0.2s ease, background 0.2s ease;
 }
 .password-toggle-btn .pw-icon {
   display: flex;
   align-items: center;
   justify-content: center;
+  width: 22px;
+  height: 22px;
 }
 .password-toggle-btn .pw-icon svg {
   display: block;
+  width: 20px;
+  height: 20px;
+}
+.password-toggle-btn:hover {
+  color: #334155;
+  background: rgba(15, 23, 42, 0.05);
 }
 
 button:disabled,
@@ -803,10 +817,6 @@ a.button:hover {
     max-height: 320px !important;
   }
 
-  /* עיניית סיסמה – רוחב מלא במובייל */
-  .password-toggle-wrap {
-    max-width: 100%;
-  }
 }
 
 
