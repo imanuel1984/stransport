@@ -47,6 +47,5 @@ htmlcov/
 # Node (if any frontend tooling added later)
 node_modules/
 
-# WhatsApp automation – סשן ומטמון (הקוד עולה ל-git)
-whatsapp_morning/.wwebjs_auth/
-whatsapp_morning/.wwebjs_cache/
+# WhatsApp automation – ריפו נפרד, לא חלק מפרויקט האתר
+whatsapp_morning/
