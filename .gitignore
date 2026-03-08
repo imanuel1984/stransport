@@ -41,3 +41,6 @@ htmlcov/
 
 # Docker
 *.pid
+
+# Node (if any frontend tooling added later)
+node_modules/

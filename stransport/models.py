@@ -64,6 +64,7 @@ class TransportRequest(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     no_volunteers_available = models.BooleanField(default=False)
     cancel_reason = models.CharField(max_length=50, blank=True)
+    cancelled_at = models.DateTimeField(null=True, blank=True, help_text="מועד הביטול – בקשה מבוטלת מוצגת עד למחרת")
     ai_summary = models.TextField(blank=True)
 
     def __str__(self):
@@ -88,3 +89,17 @@ class TransportRejection(models.Model):
 
     class Meta:
         unique_together = ("request", "volunteer")
+
+
+class VolunteerLocation(models.Model):
+    assignment = models.OneToOneField(
+        TransportAssignment,
+        on_delete=models.CASCADE,
+        related_name="location",
+    )
+    lat = models.FloatField()
+    lng = models.FloatField()
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"Location for {self.assignment} @ ({self.lat}, {self.lng})"

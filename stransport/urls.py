@@ -16,6 +16,7 @@ urlpatterns = [
     path("api/requests/delete/<int:req_id>/", views.delete_request_api, name="delete_request_api"),
     path("api/requests/update/<int:req_id>/", views.update_request_api, name="update_request_api"),
     path("api/requests/summary/<int:req_id>/", views.generate_summary_api, name="generate_summary_api"),
+    path("api/requests/location/<int:req_id>/", views.volunteer_location_api, name="volunteer_location_api"),
     path("api/route/suggest/", views.suggest_route_api, name="suggest_route_api"),
     path("api/route/links/", views.route_links_api, name="route_links_api"),
 

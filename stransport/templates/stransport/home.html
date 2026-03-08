@@ -3,9 +3,15 @@
 
 {% block content %}
 <h1 class="page-title">מערכת הסעות</h1>
+{% if current_user.is_authenticated %}
 <a href="/trivia/" class="button" style="display:inline-block;margin:12px 0;">
   🎮 טריויה חכמה בזמן ההמתנה
 </a>
+{% else %}
+<button type="button" class="button trivia-require-login-btn" style="display:inline-block;margin:12px 0;">
+  🎮 טריויה חכמה בזמן ההמתנה
+</button>
+{% endif %}
 
 
 {% if current_user.profile.role == "sick" %}
@@ -27,6 +33,7 @@
     <input type="hidden" id="dest-lng" name="dest_lng">
 
     <input type="datetime-local" name="time" required>
+    <div class="field-error" id="create-time-error"></div>
     <input type="text" name="notes" placeholder="הערות">
     <input type="text" id="phone-input" name="phone" placeholder="מספר טלפון" required>
     <div class="field-error" id="phone-error"></div>
@@ -35,6 +42,12 @@
 
   <button type="button" class="button" id="toggle-patient-map">הסתר מפה</button>
   <div id="patient-map" class="requests-map"></div>
+  <div id="patient-volunteer-location-wrap" style="display:none;">
+    <div class="field-hint" style="margin-top:6px; color:#475569;">מיקום המתנדב מוצג רק מ־45 דקות לפני מועד האיסוף ועד הגעתו אליך.</div>
+    <div id="patient-volunteer-location-status" class="volunteer-location-status" style="display:none; margin-top:8px; padding:10px; background:#f0fdf4; border:1px solid #86efac; border-radius:10px; font-size:0.95em; color:#166534;">
+      <span id="patient-volunteer-location-status-text">מחפשים מיקום מתנדב...</span>
+    </div>
+  </div>
 
   <div style="margin-top:12px;">
     <button id="show-closed-btn" class="button">להראות בקשות מבוטלות/סגורות</button>
@@ -49,10 +62,6 @@
 
 {% if current_user.profile.role == "volunteer" %}
 <div class="panel" id="volunteer-panel">
-  <div style="margin-bottom:12px;">
-    <button id="show-accepted-btn" class="button">להראות בקשות מאושרות שלי</button>
-    <button id="show-open-btn" class="button" style="display:none;">חזרה לבקשות פתוחות</button>
-  </div>
   <div class="route-panel">
     <div class="route-panel-row">
       <label class="route-label" for="route-start-input">נקודת התחלה</label>
@@ -65,14 +74,16 @@
     </div>
     <div class="route-panel-row">
       <label class="route-label" for="route-mode">מצב מסלול</label>
-      <select id="route-mode">
+      <select id="route-mode" class="route-mode-select">
         <option value="pickup_only">איסופים בלבד (ללא נקודות יעד)</option>
         <option value="pickup_then_dropoff">איסוף ואז יעד</option>
       </select>
     </div>
     <div class="route-panel-actions">
       <button type="button" class="btn-primary" id="route-suggest-btn" disabled>Suggest best route</button>
-      <button type="button" class="button" id="route-nav-btn" disabled>Start navigation</button>
+      <button type="button" class="button" id="route-nav-btn" disabled>ניווט ב-Google Maps</button>
+      <button type="button" class="button" id="route-nav-waze-btn" disabled title="Waze מתחיל מהמיקום הנוכחי שלך (GPS) – לא מנקודת ההתחלה שבחרת. למסלול מלא עם נקודת מוצא השתמש ב-Google Maps.">ניווט ב-Waze</button>
+      <span class="field-hint" style="display:inline-block;margin-right:8px;" id="route-waze-hint">(Waze: ניווט מהמיקום שלך עכשיו לתחנה הראשונה. למסלול מלא עם נקודת מוצא – Google Maps)</span>
     </div>
     <div class="field-hint" id="route-notice"></div>
     <div class="field-error" id="route-error"></div>
@@ -80,13 +91,23 @@
   </div>
   <button type="button" class="button" id="toggle-volunteer-map">הסתר מפה</button>
   <div id="requests-map" class="requests-map"></div>
+  <div style="margin-top:10px;">
+    <button type="button" class="button" id="volunteer-share-location-btn">📍 שתף מיקום עם המטופל</button>
+    <button type="button" class="button" id="volunteer-stop-location-btn">הפסק שיתוף מיקום</button>
+    <span class="field-hint" style="display:inline-block;margin-right:8px;">המטופל יראה את מיקומך רק מ־45 דקות לפני מועד האיסוף ועד הגעתך אליו. הדפדפן יבקש הרשאת מיקום.</span>
+  </div>
+  <div id="volunteer-location-status" class="volunteer-location-status" style="margin-top:8px; padding:10px; min-height:2.5em; background:#f0fdf4; border:1px solid #86efac; border-radius:10px; font-size:0.95em; color:#166534;">שיתוף מיקום כבוי. לחץ "שתף מיקום" כדי להפעיל.</div>
+  <div style="margin-top:12px;">
+    <button id="show-accepted-btn" class="button">להראות בקשות מאושרות שלי</button>
+    <button id="show-open-btn" class="button" style="display:none;">חזרה לבקשות פתוחות</button>
+  </div>
   <div id="requests-container"></div>
   <div id="accepted-requests-container" style="display:none;"></div>
 </div>
 {% endif %}
 
 {% if current_user.profile.role == "sick" %}
-<div class="modal" id="edit-modal" aria-hidden="true">
+<div class="modal" id="edit-modal" aria-hidden="true" tabindex="-1">
   <div class="modal-backdrop" data-close="true"></div>
   <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="edit-modal-title">
     <div class="modal-header">
@@ -94,6 +115,7 @@
       <button type="button" class="modal-close" data-close="true">×</button>
     </div>
     <form id="edit-request-form">
+      {% csrf_token %}
       <input type="hidden" name="request_id" id="edit-request-id">
 
       <label for="edit-pickup-input">כתובת איסוף</label>
@@ -114,6 +136,7 @@
 
       <label for="edit-time-input">זמן</label>
       <input type="datetime-local" id="edit-time-input" name="time" required>
+      <div class="field-error" id="edit-time-error"></div>
 
       <label for="edit-notes-input">הערות</label>
       <input type="text" id="edit-notes-input" name="notes">

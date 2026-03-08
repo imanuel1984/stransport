@@ -30,11 +30,14 @@ from .models import (
     TransportAssignment,
     Profile,
     TransportRejection,
+    VolunteerLocation,
     normalize_israeli_phone,
 )
 from .tasks import notify_new_request, generate_ai_summary
 import json
 import urllib.parse
+from datetime import timedelta
+from django.utils import timezone
 
 logger = logging.getLogger(__name__)
 
@@ -95,6 +98,7 @@ def signup(request):
 # --- HOME ---
 @login_required
 def home(request):
+    delete_expired_requests()
     return render(request, "stransport/home.html", {"current_user": request.user})
 
 
@@ -126,7 +130,7 @@ def serialize_request(r):
         "destination": r.destination,
         "dest_lat": r.dest_lat,
         "dest_lng": r.dest_lng,
-        "requested_time": r.requested_time.strftime("%Y-%m-%d %H:%M"),
+        "requested_time": timezone.localtime(r.requested_time).strftime("%Y-%m-%d %H:%M") if not timezone.is_naive(r.requested_time) else r.requested_time.strftime("%Y-%m-%d %H:%M"),
         "status": r.status,
         "status_display": r.get_status_display(),
         "status_label": status_label,
@@ -137,6 +141,57 @@ def serialize_request(r):
         "cancel_reason": r.cancel_reason,
         "ai_summary": r.ai_summary,
     }
+
+
+def delete_expired_requests():
+    """
+    מחק: (1) בקשות שמועד האיסוף עבר (לפחות 30 דקות), מלבד בוטלו לאחרונה.
+    (2) בקשות מבוטלות ישנות – בוטלו לפני יותר מ־48 שעות (עד למחרת הביטול).
+    """
+    try:
+        now = timezone.now()
+        cutoff = now - timedelta(minutes=30)
+        cancel_keep = now - timedelta(days=2)
+
+        # (1) בקשות שמועדן עבר – לא למחוק בוטלו לאחרונה
+        qs = TransportRequest.objects.filter(requested_time__lt=cutoff).exclude(
+            models.Q(status="cancelled")
+            & (
+                models.Q(cancelled_at__gte=cancel_keep)
+                | (models.Q(cancelled_at__isnull=True) & models.Q(requested_time__gte=cancel_keep))
+            )
+        )
+        deleted_count, _ = qs.delete()
+        if deleted_count:
+            logger.info("delete_expired_requests: deleted %d request(s) with requested_time before %s", deleted_count, cutoff)
+
+        # (2) בקשות מבוטלות ישנות – בוטלו לפני יותר מ־48 שעות
+        old_cancelled = TransportRequest.objects.filter(
+            status="cancelled"
+        ).filter(
+            models.Q(cancelled_at__lt=cancel_keep) | models.Q(cancelled_at__isnull=True, requested_time__lt=cancel_keep)
+        )
+        cancelled_count, _ = old_cancelled.delete()
+        if cancelled_count:
+            logger.info("delete_expired_requests: deleted %d old cancelled request(s)", cancelled_count)
+    except Exception:
+        logger.warning("Failed to delete expired transport requests", exc_info=True)
+
+
+def check_request_not_expired(ride_request):
+    """
+    Block actions on a request whose time has passed.
+    Do not delete here; deletion happens the next day in delete_expired_requests().
+    """
+    if ride_request.requested_time < timezone.now():
+        return JsonResponse(
+            {
+                "success": False,
+                "error": "תאריך הבקשה חלף. הבקשה תימחק למחרת.",
+            },
+            status=400,
+        )
+    return None
 
 
 def parse_optional_float(value):
@@ -300,7 +355,10 @@ def broadcast_request_event(event, request_obj, notify_volunteers=True, notify_p
 @login_required_json
 def requests_api(request):
     try:
+        delete_expired_requests()
         role = getattr(request.user.profile, "role", "")
+        now = timezone.now()
+        cutoff = now - timedelta(days=1)
         if role == "volunteer":
             qs = TransportRequest.objects.filter(status="open", no_volunteers_available=False).exclude(
                 rejections__volunteer=request.user
@@ -309,7 +367,12 @@ def requests_api(request):
             qs = TransportRequest.objects.filter(sick=request.user, status="open")
         else:
             qs = TransportRequest.objects.none()
-        data = [serialize_request(r) for r in qs.order_by("-created_at")]
+        qs = qs.filter(requested_time__gte=cutoff).order_by("-created_at")
+        data = []
+        for r in qs:
+            d = serialize_request(r)
+            d["expired"] = r.requested_time < now
+            data.append(d)
         return JsonResponse({"requests": data})
     except Exception as e:
         return JsonResponse({"error": str(e)}, status=500)
@@ -393,6 +456,11 @@ def accept_request_api(request, req_id):
         if request.user.profile.role != "volunteer":
             return JsonResponse({"error": "Only volunteers can accept"}, status=403)
         ride_request = get_object_or_404(TransportRequest, id=req_id, status="open")
+
+        expired_response = check_request_not_expired(ride_request)
+        if expired_response:
+            return expired_response
+
         TransportAssignment.objects.create(request=ride_request, volunteer=request.user)
         ride_request.status = "accepted"
         ride_request.save()
@@ -413,6 +481,9 @@ def reject_request_api(request, req_id):
             return JsonResponse({"error": "Only volunteers can reject"}, status=403)
 
         ride_request = get_object_or_404(TransportRequest, id=req_id)
+        expired_response = check_request_not_expired(ride_request)
+        if expired_response:
+            return expired_response
         if ride_request.status != "open":
             return JsonResponse({"error": "Request not open"}, status=400)
 
@@ -431,6 +502,7 @@ def reject_request_api(request, req_id):
             ride_request.no_volunteers_available = True
             ride_request.status = "cancelled"
             ride_request.cancel_reason = "no_volunteers"
+            ride_request.cancelled_at = timezone.now()
             ride_request.save()
 
         broadcast_request_event("request_rejected", ride_request)
@@ -449,8 +521,13 @@ def cancel_request_api(request, req_id):
         if request.user.profile.role != "sick":
             return JsonResponse({"error": "Only sick users can cancel"}, status=403)
         ride_request = get_object_or_404(TransportRequest, id=req_id, sick=request.user, status="open")
+
+        expired_response = check_request_not_expired(ride_request)
+        if expired_response:
+            return expired_response
         ride_request.status = "cancelled"
         ride_request.cancel_reason = "patient_cancelled"
+        ride_request.cancelled_at = timezone.now()
         ride_request.save()
         broadcast_request_event("request_cancelled", ride_request)
         return JsonResponse({"success": True})
@@ -462,13 +539,26 @@ def cancel_request_api(request, req_id):
 @login_required_json
 def accepted_requests_api(request):
     try:
+        delete_expired_requests()
         if request.user.profile.role != "volunteer":
             return JsonResponse({"requests": []})
-        reqs = TransportRequest.objects.filter(
-            transportassignment__volunteer=request.user,
-            status="accepted"
-        ).distinct().order_by("-created_at")
-        return JsonResponse({"requests": [serialize_request(r) for r in reqs]})
+        now = timezone.now()
+        cutoff = now - timedelta(days=1)
+        reqs = (
+            TransportRequest.objects.filter(
+                transportassignment__volunteer=request.user,
+                status="accepted",
+                requested_time__gte=cutoff,
+            )
+            .distinct()
+            .order_by("requested_time")
+        )
+        data = []
+        for r in reqs:
+            d = serialize_request(r)
+            d["expired"] = r.requested_time < now
+            data.append(d)
+        return JsonResponse({"requests": data})
     except Exception as e:
         return JsonResponse({"error": str(e)}, status=500)
 
@@ -477,17 +567,27 @@ def accepted_requests_api(request):
 @login_required_json
 def closed_requests_api(request):
     try:
+        delete_expired_requests()
         if request.user.profile.role != "sick":
             return JsonResponse({"requests": []})
 
-        qs = TransportRequest.objects.filter(
-            sick=request.user
-        ).filter(
-            models.Q(status__in=["cancelled", "done"]) |
-            models.Q(status="accepted", transportassignment__isnull=False)
-        ).order_by("-created_at")
+        now = timezone.now()
+        cutoff = now - timedelta(days=1)
+        # בקשות מבוטלות: להציג עד למחרת הביטול (48 שעות)
+        cancel_cutoff = now - timedelta(days=2)
+        qs = TransportRequest.objects.filter(sick=request.user).filter(
+            models.Q(status="done", requested_time__gte=cutoff)
+            | models.Q(status="accepted", transportassignment__isnull=False, requested_time__gte=cutoff)
+            | models.Q(status="cancelled", cancelled_at__gte=cancel_cutoff)
+            | models.Q(status="cancelled", cancelled_at__isnull=True, requested_time__gte=cancel_cutoff)
+        ).order_by("requested_time")
 
-        return JsonResponse({"requests": [serialize_request(r) for r in qs]})
+        data = []
+        for r in qs:
+            d = serialize_request(r)
+            d["expired"] = r.requested_time < now
+            data.append(d)
+        return JsonResponse({"requests": data})
     except Exception as e:
         return JsonResponse({"error": str(e)}, status=500)
 
@@ -514,6 +614,92 @@ def delete_request_api(request, req_id):
         return JsonResponse({"error": str(e)}, status=500)
 
 
+# --- API: VOLUNTEER LIVE LOCATION ---
+@login_required_json
+def volunteer_location_api(request, req_id):
+    """
+    POST (volunteer): update live location for an accepted request.
+    GET (sick): get last known volunteer location for own accepted, upcoming request.
+    """
+    try:
+        try:
+            ride_request = TransportRequest.objects.get(id=req_id)
+        except TransportRequest.DoesNotExist:
+            return JsonResponse({"error": "request_not_found"}, status=404)
+
+        if request.method == "POST":
+            try:
+                role = getattr(request.user.profile, "role", None)
+            except Exception:
+                role = None
+            if role != "volunteer":
+                return JsonResponse({"error": "Only volunteers can update location"}, status=403)
+            assignment = TransportAssignment.objects.filter(
+                request=ride_request,
+                volunteer=request.user,
+            ).first()
+            if not assignment:
+                return JsonResponse({"error": "not_assigned", "detail": "You are not assigned to this request"}, status=403)
+            try:
+                data = json.loads(request.body.decode("utf-8") if request.body else "{}")
+            except (ValueError, UnicodeDecodeError):
+                return JsonResponse({"error": "Invalid JSON body"}, status=400)
+            lat = parse_optional_float(data.get("lat"))
+            lng = parse_optional_float(data.get("lng"))
+            if lat is None or lng is None:
+                return JsonResponse({"error": "Invalid coordinates"}, status=400)
+            loc, _created = VolunteerLocation.objects.update_or_create(
+                assignment=assignment,
+                defaults={"lat": float(lat), "lng": float(lng)},
+            )
+            updated_at = loc.updated_at
+            return JsonResponse(
+                {
+                    "success": True,
+                    "lat": loc.lat,
+                    "lng": loc.lng,
+                    "updated_at": updated_at.isoformat() if updated_at else timezone.now().isoformat(),
+                }
+            )
+
+        # GET: patient side
+        if request.user.profile.role != "sick" or ride_request.sick_id != request.user.id:
+            return JsonResponse({"error": "Only the owning patient can view location"}, status=403)
+
+        # Show location only from 45 min before until 30 min after requested pickup time
+        window_minutes = 45
+        now = timezone.now()
+        window_start = ride_request.requested_time - timedelta(minutes=window_minutes)
+        window_end = ride_request.requested_time + timedelta(minutes=30)
+        if now < window_start:
+            return JsonResponse({"too_early": True})
+        if now > window_end:
+            return JsonResponse({"too_late": True})
+
+        assignment = getattr(ride_request, "transportassignment", None)
+        if not assignment:
+            return JsonResponse({"no_assignment": True})
+        try:
+            loc = assignment.location
+        except VolunteerLocation.DoesNotExist:
+            return JsonResponse({"no_location": True})
+
+        return JsonResponse(
+            {
+                "lat": loc.lat,
+                "lng": loc.lng,
+                "updated_at": loc.updated_at.isoformat(),
+                "pickup_lat": ride_request.pickup_lat,
+                "pickup_lng": ride_request.pickup_lng,
+            }
+        )
+    except Http404:
+        raise
+    except Exception as e:
+        logger.exception("volunteer_location_api error (req_id=%s): %s", req_id, e)
+        return JsonResponse({"error": "Server error. Check server logs."}, status=500)
+
+
 # --- API: ROUTE SUGGESTION ---
 @login_required_json
 def suggest_route_api(request):
@@ -522,6 +708,8 @@ def suggest_route_api(request):
     try:
         if request.user.profile.role != "volunteer":
             return JsonResponse({"error": "Only volunteers can suggest routes"}, status=403)
+
+        delete_expired_requests()
 
         data = json.loads(request.body or "{}")
         start_lat = parse_optional_float(data.get("start_lat"))
@@ -538,14 +726,22 @@ def suggest_route_api(request):
         if mode not in {"pickup_only", "pickup_then_dropoff"}:
             return JsonResponse({"error": "Invalid mode"}, status=400)
 
-        qs = TransportRequest.objects.filter(
-            id__in=request_ids,
-            status="open",
-            no_volunteers_available=False,
-        )
+        now = timezone.now()
+        # אפשר לבחור גם בקשות פתוחות וגם בקשות מאושרות (שהמתנדב מקושר אליהן)
+        qs = TransportRequest.objects.filter(id__in=request_ids).filter(
+            models.Q(
+                status="open",
+                no_volunteers_available=False,
+                requested_time__gte=now,
+            )
+            | models.Q(
+                status="accepted",
+                transportassignment__volunteer=request.user,
+            )
+        ).distinct()
         requests_map = {r.id: r for r in qs}
         if len(requests_map) != len(request_ids):
-            return JsonResponse({"error": "Some requests are not available"}, status=400)
+            return JsonResponse({"error": "Some requests are not available or not assigned to you"}, status=400)
 
         for req in requests_map.values():
             updated = False
@@ -787,6 +983,10 @@ def update_request_api(request, req_id):
             sick=request.user,
             status="open",
         )
+
+        expired_response = check_request_not_expired(ride_request)
+        if expired_response:
+            return expired_response
 
         data = json.loads(request.body or "{}")
         pickup = data.get("pickup")

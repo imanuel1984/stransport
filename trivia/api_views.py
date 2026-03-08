@@ -67,8 +67,6 @@ def _questions_path() -> Path:
 # Groq core
 # =========================
 def _groq_request(messages, temperature=0.25, max_tokens=1200):
-    print("GROQ_API_KEY seen by Django:", bool(os.environ.get("GROQ_API_KEY")))
-
     api_key = os.environ.get("GROQ_API_KEY")
     if not api_key:
         raise RuntimeError("חסר GROQ_API_KEY במשתני הסביבה")
