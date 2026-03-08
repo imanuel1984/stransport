@@ -27,9 +27,12 @@ load_dotenv(BASE_DIR / ".env")
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-_DEBUG = os.environ.get("DEBUG", "False").lower() in {"1", "true", "yes", "on"}
+_debug_raw = os.environ.get("DEBUG", "").strip().lower()
+_DEBUG = _debug_raw in ("1", "true", "yes", "on")
+_debug_explicitly_false = _debug_raw in ("0", "false", "no", "off")
 _SECRET_KEY = os.environ.get("SECRET_KEY", "").strip()
-if not _SECRET_KEY and not _DEBUG:
+# Only require SECRET_KEY when DEBUG is explicitly False (production). Build (collectstatic) often has no env.
+if not _SECRET_KEY and _debug_explicitly_false:
     raise RuntimeError("SECRET_KEY must be set in production (set DEBUG=False and SECRET_KEY in env).")
 SECRET_KEY = _SECRET_KEY or "django-insecure-dev-only-change-in-production"
 
