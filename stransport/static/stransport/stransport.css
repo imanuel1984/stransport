@@ -241,6 +241,33 @@ form input:focus, form textarea:focus, form select:focus {
   min-height: 18px;
 }
 
+.field-success {
+  color: #047857;
+  font-size: 0.85rem;
+  margin-top: 4px;
+  min-height: 18px;
+}
+
+.field-success-glow {
+  color: #059669;
+  font-weight: 700;
+  animation: successGlow 1s ease-in-out infinite alternate;
+}
+
+@keyframes successGlow {
+  from {
+    text-shadow: 0 0 0 rgba(16, 185, 129, 0);
+    transform: scale(1);
+  }
+  to {
+    text-shadow:
+      0 0 6px rgba(16, 185, 129, 0.45),
+      0 0 14px rgba(16, 185, 129, 0.35),
+      0 0 22px rgba(16, 185, 129, 0.2);
+    transform: scale(1.02);
+  }
+}
+
 /* עיניית סיסמה – מלבן אחד, עיניית ממורכזת בסימטריה */
 .password-toggle-wrap {
   display: flex;

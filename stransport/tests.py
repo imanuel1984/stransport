@@ -39,6 +39,28 @@ class TransportAppTests(TestCase):
         response = self.client.get(reverse("home"))
         self.assertEqual(response.status_code, 302)
 
+    def test_login_status_api_accepts_matching_credentials(self):
+        response = self.client.post(
+            reverse("login_status_api"),
+            {"username": "patient1", "password": "1234"},
+        )
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertTrue(data["username_valid"])
+        self.assertTrue(data["password_valid"])
+        self.assertTrue(data["ready"])
+
+    def test_login_status_api_rejects_wrong_password(self):
+        response = self.client.post(
+            reverse("login_status_api"),
+            {"username": "patient1", "password": "wrong-pass"},
+        )
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertTrue(data["username_valid"])
+        self.assertFalse(data["password_valid"])
+        self.assertFalse(data["ready"])
+
     @patch("stransport.views.notify_new_request.delay")
     def test_patient_can_create_request(self, mock_notify):
         self.login_sick()

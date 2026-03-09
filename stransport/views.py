@@ -12,7 +12,7 @@ class FaviconView(View):
 from django.shortcuts import render, get_object_or_404, redirect
 from functools import wraps
 from django.contrib.auth.decorators import login_required
-from django.contrib.auth import login
+from django.contrib.auth import login, authenticate
 from django.contrib.auth.forms import UserCreationForm
 from django.http import JsonResponse
 from django.db import models
@@ -38,6 +38,7 @@ import json
 import urllib.parse
 from datetime import timedelta
 from django.utils import timezone
+from django.views.decorators.http import require_POST
 
 logger = logging.getLogger(__name__)
 
@@ -93,6 +94,53 @@ def signup(request):
             )
 
     return render(request, "registration/signup.html", {"form": UserCreationForm()})
+
+
+@require_POST
+def login_status_api(request):
+    username = (request.POST.get("username") or "").strip()
+    password = request.POST.get("password") or ""
+
+    username_exists = False
+    credentials_valid = False
+    username_message = ""
+    password_message = ""
+
+    if not username:
+        username_message = "יש להזין שם משתמש."
+    else:
+        username_exists = User.objects.filter(username=username).exists()
+        username_message = (
+            "שם המשתמש קיים במערכת."
+            if username_exists
+            else "שם המשתמש לא קיים במערכת."
+        )
+
+    if not password:
+        password_message = "יש להזין סיסמה."
+    elif not username_exists:
+        password_message = "הסיסמה תיבדק אחרי ששם המשתמש יהיה תקין."
+    else:
+        credentials_valid = authenticate(
+            request,
+            username=username,
+            password=password,
+        ) is not None
+        password_message = (
+            "הסיסמה תואמת לשם המשתמש."
+            if credentials_valid
+            else "הסיסמה לא תואמת לשם המשתמש."
+        )
+
+    return JsonResponse(
+        {
+            "username_valid": username_exists,
+            "password_valid": credentials_valid,
+            "ready": username_exists and credentials_valid,
+            "username_message": username_message,
+            "password_message": password_message,
+        }
+    )
 
 
 # --- HOME ---

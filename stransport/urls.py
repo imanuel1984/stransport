@@ -6,6 +6,7 @@ urlpatterns = [
     path('favicon.ico', FaviconView.as_view(), name='favicon'),
     path("", views.home, name="home"),
     path("signup/", views.signup, name="signup"),
+    path("api/auth/login-status/", views.login_status_api, name="login_status_api"),
     path("api/requests/", views.requests_api, name="requests_api"),
     path("api/requests/create/", views.create_request_api, name="create_request_api"),
     path("api/requests/accept/<int:req_id>/", views.accept_request_api, name="accept_request_api"),

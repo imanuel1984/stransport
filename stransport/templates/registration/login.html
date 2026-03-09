@@ -39,12 +39,14 @@
     {% csrf_token %}
     <label>שם משתמש:</label>
     <input type="text" name="username" value="{{ form.username.value|default_if_none:'' }}" autocomplete="username" required><br>
+    <div class="field-error" id="login-username-error"></div>
     <label>סיסמא:</label>
     <div class="password-toggle-wrap">
-      <input type="password" name="password" id="login-password-input" minlength="8" autocomplete="current-password" required>
+      <input type="password" name="password" id="login-password-input" autocomplete="current-password" required>
       <button type="button" class="password-toggle-btn" id="login-password-toggle" aria-label="הצג סיסמה" title="הצג/הסתר סיסמה"><span class="pw-icon" aria-hidden="true"></span></button>
     </div><br>
     <div class="field-error" id="login-password-error"></div>
+    <div class="field-error" id="login-submit-error"></div>
     <button type="submit" id="login-btn" disabled>כניסה</button>
 </form>
 <script>
@@ -52,8 +54,14 @@
   const loginBtn = document.getElementById('login-btn');
   const usernameInput = loginForm ? loginForm.querySelector('input[name="username"]') : null;
   const passwordInput = document.getElementById('login-password-input');
+  const usernameError = document.getElementById('login-username-error');
   const passwordError = document.getElementById('login-password-error');
+  const submitError = document.getElementById('login-submit-error');
   const passwordToggle = document.getElementById('login-password-toggle');
+  const csrfInput = loginForm ? loginForm.querySelector('input[name="csrfmiddlewaretoken"]') : null;
+  let loginValidationTimer = null;
+  let loginValidationRequestId = 0;
+  let loginCredentialsValid = false;
 
   if (passwordToggle && passwordInput) {
     const iconEl = passwordToggle.querySelector('.pw-icon');
@@ -71,23 +79,141 @@
     });
   }
 
-  function updateLoginButton() {
-    if (!loginBtn || !usernameInput || !passwordInput) return;
-    const userOk = Boolean(usernameInput.value);
-    const passOk = passwordInput.value.length >= 8;
-    loginBtn.disabled = !(userOk && passOk);
-    if (passwordError) {
-      passwordError.textContent = passOk || !passwordInput.value ? '' : 'הסיסמה חייבת להיות לפחות 8 תווים.';
+  function setMessageState(element, message, state, glow = false) {
+    if (!element) return;
+    element.textContent = message || '';
+    element.classList.remove('field-error', 'field-success', 'field-success-glow');
+    if (!message) {
+      element.classList.add('field-error');
+      return;
+    }
+    if (state === 'success') {
+      element.classList.add('field-success');
+      if (glow) {
+        element.classList.add('field-success-glow');
+      }
+    } else {
+      element.classList.add('field-error');
     }
   }
 
+  function setLoginMessages({
+    usernameMessage = '',
+    usernameState = 'error',
+    passwordMessage = '',
+    passwordState = 'error',
+    submitMessage = '',
+    submitState = 'error',
+  } = {}) {
+    setMessageState(usernameError, usernameMessage, usernameState, usernameState === 'success');
+    setMessageState(passwordError, passwordMessage, passwordState, passwordState === 'success');
+    setMessageState(submitError, submitMessage, submitState, submitState === 'success');
+  }
+
+  async function validateLoginAgainstSystem() {
+    if (!loginBtn || !usernameInput || !passwordInput) return;
+
+    const username = usernameInput.value.trim();
+    const password = passwordInput.value;
+    loginCredentialsValid = false;
+
+    if (!username) {
+      loginBtn.disabled = true;
+      setLoginMessages({
+        usernameMessage: 'יש להזין שם משתמש.',
+        submitMessage: 'לא ניתן להיכנס עד ששם המשתמש והסיסמה תואמים למערכת.',
+      });
+      return;
+    }
+
+    if (!password) {
+      loginBtn.disabled = true;
+    }
+
+    loginBtn.disabled = true;
+    const requestId = ++loginValidationRequestId;
+    const body = new URLSearchParams({
+      username,
+      password,
+    });
+
+    try {
+      const response = await fetch("{% url 'login_status_api' %}", {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
+          'X-CSRFToken': csrfInput ? csrfInput.value : '',
+          'X-Requested-With': 'XMLHttpRequest',
+        },
+        body: body.toString(),
+      });
+
+      if (!response.ok) {
+        throw new Error('login validation failed');
+      }
+
+      const data = await response.json();
+      if (requestId !== loginValidationRequestId) return;
+
+      loginCredentialsValid = Boolean(data.ready);
+      loginBtn.disabled = !loginCredentialsValid;
+      setLoginMessages({
+        usernameMessage: data.username_message || '',
+        usernameState: data.username_valid ? 'success' : 'error',
+        passwordMessage: password ? (data.password_message || '') : 'יש להזין סיסמה.',
+        passwordState: data.password_valid ? 'success' : 'error',
+        submitMessage: loginCredentialsValid
+          ? 'אפשר להיכנס. שם המשתמש והסיסמה תואמים למערכת.'
+          : 'לא ניתן להיכנס עד ששם המשתמש והסיסמה תואמים למערכת.',
+        submitState: loginCredentialsValid ? 'success' : 'error',
+      });
+    } catch (error) {
+      if (requestId !== loginValidationRequestId) return;
+      loginCredentialsValid = false;
+      loginBtn.disabled = true;
+      setLoginMessages({
+        submitMessage: 'לא ניתן לאמת כעת את פרטי ההתחברות. נסה שוב.',
+      });
+    }
+  }
+
+  function scheduleLoginValidation() {
+    if (loginValidationTimer) {
+      clearTimeout(loginValidationTimer);
+    }
+    loginValidationTimer = setTimeout(validateLoginAgainstSystem, 250);
+  }
+
+  function triggerImmediateLoginValidation() {
+    if (loginValidationTimer) {
+      clearTimeout(loginValidationTimer);
+    }
+    validateLoginAgainstSystem();
+  }
+
   if (usernameInput) {
-    usernameInput.addEventListener('input', updateLoginButton);
+    usernameInput.addEventListener('input', scheduleLoginValidation);
+    usernameInput.addEventListener('blur', triggerImmediateLoginValidation);
   }
   if (passwordInput) {
-    passwordInput.addEventListener('input', updateLoginButton);
+    passwordInput.addEventListener('input', scheduleLoginValidation);
   }
-  updateLoginButton();
+  if (loginForm) {
+    loginForm.addEventListener('submit', async function(event) {
+      if (!loginCredentialsValid) {
+        event.preventDefault();
+        await validateLoginAgainstSystem();
+        if (!usernameInput.value.trim() && usernameInput) {
+          usernameInput.focus();
+        } else if (!passwordInput.value && passwordInput) {
+          passwordInput.focus();
+        } else if (!loginCredentialsValid && passwordInput) {
+          passwordInput.focus();
+        }
+      }
+    });
+  }
+  validateLoginAgainstSystem();
 </script>
 <p>אין לך חשבון? <a href="{% url 'signup' %}">הירשם</a></p>
 {% endblock %}
