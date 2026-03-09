@@ -36,7 +36,7 @@
   </script>
   <script src="{% static 'stransport/stransport.js' %}?v=20260220" defer></script>
 </head>
-<body>
+<body class="{% block body_class %}{% endblock %}">
   <nav>
     <div>
       {% if current_user.is_authenticated %}
@@ -55,10 +55,10 @@
     </div>
   </nav>
 
-  <main>
+  <main class="{% block main_class %}{% endblock %}">
     {% block content %}{% endblock %}
   </main>
-</body>
+
   <div id="trivia-login-required-msg" style="display:none; position:fixed; bottom:70px; left:50%; transform:translateX(-50%); background:#fef3c7; border:1px solid #f59e0b; padding:12px 24px; border-radius:8px; z-index:9999; box-shadow:0 2px 12px rgba(0,0,0,0.2); font-weight:600;">קודם יש להיכנס</div>
 
   <footer class="app-footer" style="background:#f8fafc;padding:12px 16px;border-top:1px solid #e6eef8;">
@@ -94,4 +94,5 @@
     })();
   </script>
   {% block extra_scripts %}{% endblock %}
+</body>
 </html>

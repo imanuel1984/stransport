@@ -19,6 +19,12 @@
   box-sizing: border-box;
 }
 
+html,
+body {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
 body {
   font-family: 'Space Grotesk', system-ui, Arial, sans-serif;
   background: radial-gradient(1200px 500px at 10% -10%, #fde68a 0%, transparent 55%),
@@ -30,6 +36,8 @@ body {
   direction: rtl;
   text-align: right;
   min-height: 100vh;
+  display: flex;
+  flex-direction: column;
 }
 
 nav {
@@ -58,6 +66,7 @@ nav a:hover {
 }
 
 main {
+  flex: 1;
   max-width: 980px;
   margin: 32px auto 60px;
   background: var(--surface);
@@ -66,6 +75,15 @@ main {
   box-shadow: var(--shadow);
   border: 1px solid var(--border);
   animation: liftIn 0.6s ease both;
+}
+
+.auth-page {
+  min-height: 100dvh;
+}
+
+.auth-page main.auth-main {
+  max-width: 440px;
+  width: min(440px, calc(100% - 24px));
 }
 
 .page-title {
@@ -808,6 +826,18 @@ a.button:hover {
   main {
     margin: 20px 12px 40px;
     padding: 20px 18px 24px;
+  }
+
+  .auth-page main.auth-main {
+    width: calc(100% - 20px);
+    margin: 12px auto 20px;
+    padding: 18px 16px 20px;
+    border-radius: 18px;
+  }
+
+  .auth-page .welcome-card,
+  .auth-page .app-footer {
+    display: none;
   }
 
   nav {
