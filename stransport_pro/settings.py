@@ -256,19 +256,23 @@ LOGGING = {
     },
 }
 
-# CSRF & Security
+# CSRF & Security — ברשת חובה להגדיר CSRF_TRUSTED_ORIGINS עם כתובת האתר (https://...)
 CSRF_TRUSTED_ORIGINS = [
-    origin
+    origin.strip()
     for origin in os.environ.get(
         "CSRF_TRUSTED_ORIGINS",
         "http://localhost:8000,http://127.0.0.1:8000",
     ).split(",")
-    if origin
+    if origin.strip()
 ]
 CSRF_COOKIE_SECURE = not DEBUG
 SESSION_COOKIE_SECURE = not DEBUG
 CSRF_COOKIE_HTTPONLY = False
 SESSION_COOKIE_HTTPONLY = True
+CSRF_COOKIE_SAMESITE = "Lax"
+SESSION_COOKIE_SAMESITE = "Lax"
+# ברשת: לפעמים ה-cookie של CSRF לא נשלח כראוי מאחורי proxy; שימוש ב-session פותר
+CSRF_USE_SESSIONS = True
 
 # Render/Proxy HTTPS handling
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')

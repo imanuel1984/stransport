@@ -199,7 +199,28 @@
   }
   if (passwordInput) {
     passwordInput.addEventListener('input', scheduleLoginValidation);
+    passwordInput.addEventListener('change', triggerImmediateLoginValidation);
   }
+
+  // תמיכה ב-Autofill: דפדפנים לא תמיד שולחים אירועי input/change
+  window.addEventListener('load', function() {
+    function checkAutofill(attemptsLeft) {
+      if (!usernameInput || !passwordInput) return;
+      const userNow = usernameInput.value;
+      const passNow = passwordInput.value;
+
+      if (userNow || passNow) {
+        triggerImmediateLoginValidation();
+        return;
+      }
+      if (attemptsLeft > 0) {
+        setTimeout(function() { checkAutofill(attemptsLeft - 1); }, 300);
+      }
+    }
+
+    // נסה לזהות מילוי אוטומטי עד ~12 שניות אחרי טעינת הדף
+    checkAutofill(40);
+  });
   if (loginForm) {
     loginForm.addEventListener('submit', async function(event) {
       if (!loginCredentialsValid) {
@@ -215,6 +236,7 @@
       }
     });
   }
+  // קריאה ראשונית – אם השדות ריקים לא יקרה כלום, אם בדפדפן כבר התמלאו תהיה בדיקה מידית
   validateLoginAgainstSystem();
 </script>
 <p>אין לך חשבון? <a href="{% url 'signup' %}">הירשם</a></p>
