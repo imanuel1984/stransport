@@ -64,6 +64,7 @@
   let loginValidationTimer = null;
   let loginValidationRequestId = 0;
   let loginCredentialsValid = false;
+  let lastLoginCheck = { username: '', password: '', valid: false };
 
   if (passwordToggle && passwordInput) {
     const iconEl = passwordToggle.querySelector('.pw-icon');
@@ -132,6 +133,17 @@
       loginBtn.disabled = true;
     }
 
+    // אם כבר בדקנו את אותם פרטים והם תקינים – אל תשלח בקשה נוספת ולא תציג "בודק נתונים" שוב
+    if (
+      lastLoginCheck.username === username &&
+      lastLoginCheck.password === password &&
+      lastLoginCheck.valid
+    ) {
+      loginCredentialsValid = true;
+      loginBtn.disabled = false;
+      return;
+    }
+
     // מציג הודעה שהמערכת בודקת את הפרטים (חשוב במיוחד כשיש מילוי אוטומטי ולוקח כמה שניות)
     setLoginMessages({
       usernameMessage: username ? '' : 'יש להזין שם משתמש.',
@@ -166,6 +178,11 @@
       if (requestId !== loginValidationRequestId) return;
 
       loginCredentialsValid = Boolean(data.ready);
+      lastLoginCheck = {
+        username,
+        password,
+        valid: loginCredentialsValid,
+      };
       loginBtn.disabled = !loginCredentialsValid;
       setLoginMessages({
         usernameMessage: data.username_message || '',
@@ -256,16 +273,18 @@
 
   if (loginForm) {
     loginForm.addEventListener('submit', async function(event) {
-      if (!loginCredentialsValid) {
-        event.preventDefault();
-        await validateLoginAgainstSystem();
-        if (!usernameInput.value.trim() && usernameInput) {
-          usernameInput.focus();
-        } else if (!passwordInput.value && passwordInput) {
-          passwordInput.focus();
-        } else if (!loginCredentialsValid && passwordInput) {
-          passwordInput.focus();
-        }
+      // אם כבר ידוע שהפרטים תקינים – לא להריץ בדיקה שנייה, לתת לטופס להישלח מיד
+      if (loginCredentialsValid) {
+        return;
+      }
+      event.preventDefault();
+      await validateLoginAgainstSystem();
+      if (!usernameInput.value.trim() && usernameInput) {
+        usernameInput.focus();
+      } else if (!passwordInput.value && passwordInput) {
+        passwordInput.focus();
+      } else if (!loginCredentialsValid && passwordInput) {
+        passwordInput.focus();
       }
     });
   }
