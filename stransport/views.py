@@ -509,6 +509,7 @@ def create_request_api(request):
 
 
 # --- API: ACCEPT REQUEST ---
+@csrf_exempt
 @login_required_json
 def accept_request_api(request, req_id):
     if request.method != "POST":
