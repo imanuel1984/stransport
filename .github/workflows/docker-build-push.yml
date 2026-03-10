@@ -1,17 +1,8 @@
 name: Build and Push Docker Image
 
 on:
-  push:
-    branches:
-      - main
-      - master
-      - develop
-    tags:
-      - 'v*.*.*'
-  pull_request:
-    branches:
-      - main
-      - master
+  # מריצים את ה-build ל-Docker רק ידנית (workflow_dispatch),
+  # כדי שכל push רגיל לפרויקט ההסעות לא יישבור CI אם חסרים סודות Docker Hub.
   workflow_dispatch:
 
 env:
