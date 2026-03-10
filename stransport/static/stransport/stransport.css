@@ -824,18 +824,13 @@ a.button:hover {
     padding: 20px 18px 24px;
   }
 
-  /* דפי auth במובייל: טופס תופס רוב המסך (מרגות קטנות), בדסקטופ נשאר main 980px */
+  /* דפי auth במובייל: טופס תופס רוב המסך (מרגות קטנות), הטקסט העליון נשאר גלוי כמו בדסקטופ */
   .auth-page main.auth-main {
     max-width: 100%;
     width: calc(100% - 24px);
     margin: 12px auto 20px;
     padding: 20px 18px 24px;
     border-radius: 18px;
-  }
-
-  .auth-page .welcome-card,
-  .auth-page .app-footer {
-    display: none;
   }
 
   nav {
