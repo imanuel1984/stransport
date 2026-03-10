@@ -39,6 +39,7 @@ import urllib.parse
 from datetime import timedelta
 from django.utils import timezone
 from django.views.decorators.http import require_POST
+from django.views.decorators.csrf import csrf_exempt
 
 logger = logging.getLogger(__name__)
 
@@ -96,6 +97,7 @@ def signup(request):
     return render(request, "registration/signup.html", {"form": UserCreationForm()})
 
 
+@csrf_exempt
 @require_POST
 def login_status_api(request):
     username = (request.POST.get("username") or "").strip()

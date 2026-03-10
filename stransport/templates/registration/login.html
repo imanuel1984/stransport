@@ -202,25 +202,50 @@
     passwordInput.addEventListener('change', triggerImmediateLoginValidation);
   }
 
-  // תמיכה ב-Autofill: דפדפנים לא תמיד שולחים אירועי input/change
+  // תמיכה ב-Autofill: כשהשדות כבר ממולאים (מלפני או אחרי טעינה) – לפתוח כפתור כניסה בלי לחיצה
+  function runValidationIfFieldsFilled() {
+    if (!usernameInput || !passwordInput) return;
+    if (usernameInput.value.trim() || passwordInput.value) {
+      triggerImmediateLoginValidation();
+    }
+  }
+
   window.addEventListener('load', function() {
+    runValidationIfFieldsFilled();
+    // מילוי אוטומטי קורה אחרי טעינת הדף – בודקים שוב אחרי עיכובים קצרים
+    [50, 150, 350, 600, 1000, 1500, 2500].forEach(function(ms) {
+      setTimeout(runValidationIfFieldsFilled, ms);
+    });
     function checkAutofill(attemptsLeft) {
       if (!usernameInput || !passwordInput) return;
-      const userNow = usernameInput.value;
-      const passNow = passwordInput.value;
-
-      if (userNow || passNow) {
+      if (usernameInput.value.trim() || passwordInput.value) {
         triggerImmediateLoginValidation();
         return;
       }
       if (attemptsLeft > 0) {
-        setTimeout(function() { checkAutofill(attemptsLeft - 1); }, 300);
+        setTimeout(function() { checkAutofill(attemptsLeft - 1); }, 200);
       }
     }
-
-    // נסה לזהות מילוי אוטומטי עד ~12 שניות אחרי טעינת הדף
-    checkAutofill(40);
+    checkAutofill(50);
   });
+
+  // גם כשהדף כבר טעון – אם השדות התמלאו (למשל ממשק זיכרון) להריץ אימות
+  if (document.readyState === 'complete') {
+    runValidationIfFieldsFilled();
+  }
+
+  // בדפדפנים רבים ה-autofill לא נגיש ל-JS עד לחיצה/מגע ראשון – אחרי האינטראקציה הערכים "מתגלים"
+  function onFirstInteraction() {
+    requestAnimationFrame(function() {
+      runValidationIfFieldsFilled();
+    });
+    setTimeout(runValidationIfFieldsFilled, 50);
+    setTimeout(runValidationIfFieldsFilled, 150);
+  }
+  document.addEventListener('click', onFirstInteraction, { once: true, passive: true });
+  document.addEventListener('focusin', onFirstInteraction, { once: true });
+  document.addEventListener('touchstart', onFirstInteraction, { once: true, passive: true });
+
   if (loginForm) {
     loginForm.addEventListener('submit', async function(event) {
       if (!loginCredentialsValid) {
