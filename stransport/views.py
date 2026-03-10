@@ -12,7 +12,7 @@ class FaviconView(View):
 from django.shortcuts import render, get_object_or_404, redirect
 from functools import wraps
 from django.contrib.auth.decorators import login_required
-from django.contrib.auth import login, authenticate
+from django.contrib.auth import login, authenticate, logout
 from django.contrib.auth.forms import UserCreationForm
 from django.http import JsonResponse
 from django.db import models
@@ -53,7 +53,7 @@ def login_required_json(view_func):
     return _wrapped
 
 
-# --- SIGNUP ---
+# --- SIGNUP / LOGOUT ---
 def signup(request):
     if request.method == "POST":
         is_json = request.content_type.startswith("application/json")
@@ -95,6 +95,16 @@ def signup(request):
             )
 
     return render(request, "registration/signup.html", {"form": UserCreationForm()})
+
+
+@csrf_exempt
+def logout_view(request):
+    """
+    יציאה מהמערכת ללא דרישת CSRF, עבור GET או POST.
+    זה בטוח כי הפעולה היחידה היא סיום הסשן.
+    """
+    logout(request)
+    return redirect("login")
 
 
 @csrf_exempt
