@@ -132,6 +132,14 @@
       loginBtn.disabled = true;
     }
 
+    // מציג הודעה שהמערכת בודקת את הפרטים (חשוב במיוחד כשיש מילוי אוטומטי ולוקח כמה שניות)
+    setLoginMessages({
+      usernameMessage: username ? '' : 'יש להזין שם משתמש.',
+      passwordMessage: password ? '' : 'יש להזין סיסמה.',
+      submitMessage: 'בודק נתונים מול המערכת...',
+      submitState: 'error',
+    });
+
     loginBtn.disabled = true;
     const requestId = ++loginValidationRequestId;
     const body = new URLSearchParams({
