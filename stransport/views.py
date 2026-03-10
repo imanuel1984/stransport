@@ -677,6 +677,7 @@ def delete_request_api(request, req_id):
 
 
 # --- API: VOLUNTEER LIVE LOCATION ---
+@csrf_exempt
 @login_required_json
 def volunteer_location_api(request, req_id):
     """
