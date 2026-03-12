@@ -764,6 +764,7 @@ def volunteer_location_api(request, req_id):
 
 
 # --- API: ROUTE SUGGESTION ---
+@csrf_exempt
 @login_required_json
 def suggest_route_api(request):
     if request.method != "POST":
