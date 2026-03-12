@@ -446,7 +446,13 @@ def create_request_api(request):
         return JsonResponse({"error": "Invalid request"}, status=400)
     try:
         if request.user.profile.role != "sick":
-            return JsonResponse({"error": "Only sick users can create requests"}, status=403)
+            return JsonResponse(
+                {
+                    "error": "Only sick users can create requests",
+                    "message": "יש להיכנס כמטופל כדי ליצור בקשת נסיעה. אם אתה גם מתנדב וגם מטופל, היכנס בחלון/דפדפן נפרד כמטופל.",
+                },
+                status=403,
+            )
 
         data = json.loads(request.body)
         pickup = data.get("pickup")
