@@ -88,6 +88,7 @@ TEMPLATES = [
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
                 "stransport.context_processors.google_places_api_key",
+                "stransport.context_processors.current_user",
             ],
         },
     },

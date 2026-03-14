@@ -30,9 +30,15 @@
   ></script>
   {% endif %}
   <script>
+    {% if current_user.is_authenticated %}
     window.currentUserRole = "{{ current_user.profile.role|default:'' }}";
     window.currentUserId = "{{ current_user.id|default:'' }}";
     window.currentUserUsername = "{{ current_user.username|escapejs }}";
+    {% else %}
+    window.currentUserRole = "";
+    window.currentUserId = "";
+    window.currentUserUsername = "";
+    {% endif %}
   </script>
   <script src="{% static 'stransport/stransport.js' %}?v=20260220" defer></script>
 </head>
