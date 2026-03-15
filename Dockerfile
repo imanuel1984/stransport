@@ -31,6 +31,10 @@ ENV SECRET_KEY=build-time-placeholder \
 # Collect static files
 RUN python manage.py collectstatic --noinput
 
+# Entrypoint: retry migrate then gunicorn (Render Docker may need a moment for DB DNS)
+COPY docker-entrypoint.sh /app/docker-entrypoint.sh
+RUN chmod +x /app/docker-entrypoint.sh
+
 # Create a non-root user
 RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
 USER appuser
@@ -38,5 +42,5 @@ USER appuser
 # Expose port
 EXPOSE 8000
 
-# Run migrations on startup, then gunicorn
-CMD ["/bin/sh", "-c", "python manage.py migrate && gunicorn --bind 0.0.0.0:8000 --workers 3 --timeout 60 stransport_pro.wsgi:application"]
+# Render injects PORT at runtime
+CMD ["/app/docker-entrypoint.sh"]

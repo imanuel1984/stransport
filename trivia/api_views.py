@@ -10,6 +10,7 @@ from functools import wraps
 from django.contrib.auth.decorators import login_required
 from django.http import JsonResponse
 from django.views.decorators.http import require_GET, require_POST
+from django.views.decorators.csrf import csrf_exempt
 
 GROQ_BASE_URL = "https://api.groq.com/openai/v1/chat/completions"
 GROQ_MODEL = "llama-3.1-8b-instant"
@@ -156,6 +157,7 @@ def _check_rate_limit(user_id, question_text, feature, max_uses):
 # API: Chat (no spoilers)
 # =========================
 @require_POST
+@csrf_exempt
 @login_required_json
 def ai_chat(request):
     """
@@ -245,6 +247,7 @@ def ai_chat(request):
 # API: Explain (after answer)
 # =========================
 @require_POST
+@csrf_exempt
 @login_required_json
 def ai_explain(request):
     """
@@ -319,6 +322,7 @@ def ai_explain(request):
 # API: Translate (JSON Schema - stable)
 # =========================
 @require_POST
+@csrf_exempt
 @login_required_json
 def translate_questions(request):
     """

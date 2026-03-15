@@ -31,10 +31,12 @@ from .models import (
     Profile,
     TransportRejection,
     VolunteerLocation,
+    RideOffer,
     normalize_israeli_phone,
 )
 from .tasks import notify_new_request, generate_ai_summary
 import json
+import re
 import urllib.parse
 from datetime import timedelta
 from django.utils import timezone
@@ -155,11 +157,36 @@ def login_status_api(request):
     )
 
 
+# --- CORS helper for frontend (React on port 5173) ---
+def cors_json_response(response):
+    response["Access-Control-Allow-Origin"] = "http://localhost:5173"
+    return response
+
+
 # --- HOME ---
 @login_required
 def home(request):
     delete_expired_requests()
     return render(request, "stransport/home.html", {"current_user": request.user})
+
+
+# --- API: rides list for React frontend (id, from, to) ---
+def rides_api(request):
+    if request.method != "GET":
+        resp = JsonResponse({"error": "Method not allowed"}, status=405)
+        return cors_json_response(resp)
+    try:
+        # Return recent transport requests as { id, from, to } for frontend
+        qs = TransportRequest.objects.all().order_by("-created_at")[:100]
+        data = [
+            {"id": r.id, "from": r.pickup_address or "", "to": r.destination or ""}
+            for r in qs
+        ]
+        resp = JsonResponse(data, safe=False)
+        return cors_json_response(resp)
+    except Exception as e:
+        resp = JsonResponse({"error": str(e)}, status=500)
+        return cors_json_response(resp)
 
 
 # --- SERIALIZER ---
@@ -1039,6 +1066,7 @@ def route_links_api(request):
 
 
 # --- API: UPDATE REQUEST ---
+@csrf_exempt
 @login_required_json
 def update_request_api(request, req_id):
     if request.method not in {"PATCH", "POST"}:
@@ -1119,5 +1147,257 @@ def generate_summary_api(request, req_id):
         ride_request = get_object_or_404(TransportRequest, id=req_id, sick=request.user)
         generate_ai_summary.delay(ride_request.id)
         return JsonResponse({"success": True})
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
+
+
+# --- מצב AI: ולידציה לטקסט חופשי (מוצא, יעד, זמן) ---
+def validate_ai_ride_text(raw_text):
+    """
+    בודק אם בטקסט יש רמזים למוצא, יעד וזמן. מחזיר (True, None) אם תקין, אחרת (False, רשימת חסרים).
+    """
+    if not raw_text or len(raw_text.strip()) < 3:
+        return False, ["מוצא", "יעד", "זמן"]
+    t = raw_text.strip().lower()
+    # זמן: שעה (12:00, 10:30), "בשעה", "ב-10", "מחר", "יום ראשון", תאריך עם ספרות
+    time_ok = (
+        bool(re.search(r"\d{1,2}\s*:\s*\d{2}", t))  # 10:00
+        or "בשעה" in t
+        or re.search(r"\bב[- ]?\d{1,2}\b", t)  # ב-10, ב 10
+        or "מחר" in t
+        or "היום" in t
+        or "יום " in t  # יום ראשון וכו'
+        or bool(re.search(r"\d{1,2}[./]\d{1,2}", t))  # 15.3 או 15/03
+    )
+    # מוצא: "מ-", "מתל", "מירושלים", "מאיפה", "מ " + מילה
+    origin_ok = (
+        "מ-" in t
+        or t.startswith("מ ")
+        or "מתל" in t
+        or "מירושלים" in t
+        or "מחיפה" in t
+        or "מאיפה" in t
+        or "מוצא" in t
+        or bool(re.search(r"\bמ\s+\w+", t))
+    )
+    # יעד: "ל-", "לתל", "לירושלים", "ליעד", "עד "
+    dest_ok = (
+        "ל-" in t
+        or t.startswith("ל ")
+        or "לתל" in t
+        or "לירושלים" in t
+        or "לחיפה" in t
+        or "ליעד" in t
+        or "יעד" in t
+        or "עד " in t
+        or bool(re.search(r"\bל\s+\w+", t))
+    )
+    missing = []
+    if not time_ok:
+        missing.append("זמן (תאריך/שעה)")
+    if not origin_ok:
+        missing.append("מוצא (מאיפה)")
+    if not dest_ok:
+        missing.append("יעד (לאן)")
+    if missing:
+        return False, missing
+    return True, None
+
+
+def parse_ai_ride_to_request(raw_text):
+    """
+    מנסה לחלץ מטקסט חופשי: מוצא, יעד, זמן. מחזיר dict עם pickup_address, destination, requested_time (datetime)
+    או None אם לא הצלחנו לפרסר. בלי AI – רק חוקים פשוטים (מ X ל Y, מחר/שעה).
+    """
+    if not raw_text or len(raw_text.strip()) < 5:
+        return None
+    t = raw_text.strip()
+    # חילוץ מוצא ויעד: "מ... ל..." או "מתל אביב לירושלים"
+    from_to = re.search(r"מ\s*(.+?)\s+ל\s*(.+)", t, re.DOTALL)
+    if not from_to:
+        from_to = re.search(r"ממ\s*(.+?)\s+ל\s*(.+)", t)  # טעות הקלדה
+    if from_to:
+        pickup_address = from_to.group(1).strip()
+        destination = from_to.group(2).strip()
+        # להסיר מיעד רק סוף משפט (זמן): מחר, היום, ב-10, בשעה
+        for sep in [" מחר", " היום", " ב-", " בשעה", ".", ","]:
+            if sep in destination:
+                destination = destination.split(sep)[0].strip()
+    else:
+        pickup_address = destination = ""
+    # חילוץ זמן: שעה (10:00), מחר, היום
+    requested_time = None
+    time_match = re.search(r"(\d{1,2})\s*:\s*(\d{2})", t)
+    hour = 10
+    minute = 0
+    if time_match:
+        hour = int(time_match.group(1)) % 24
+        minute = int(time_match.group(2)) % 60
+    from datetime import datetime as dt
+    now = timezone.now()
+    if "מחר" in t:
+        day = now.date() + timedelta(days=1)
+    elif "היום" in t:
+        day = now.date()
+    else:
+        day = now.date() + timedelta(days=1)  # ברירת מחדל מחר
+    try:
+        requested_time = timezone.make_aware(dt(day.year, day.month, day.day, hour, minute, 0), timezone.get_current_timezone())
+    except Exception:
+        requested_time = now + timedelta(days=1)
+        requested_time = requested_time.replace(hour=10, minute=0, second=0, microsecond=0)
+    if not pickup_address or not destination:
+        return None
+    return {
+        "pickup_address": pickup_address[:255],
+        "destination": destination[:255],
+        "requested_time": requested_time,
+    }
+
+
+# --- מצב AI: דף נפרד (מתנדב: הצעת נסיעה בטקסט חופשי | מטופל: בקשת טקסט → התאמות או בקשה חדשה) ---
+@login_required
+def ai_mode_page(request):
+    user_role = getattr(getattr(request.user, "profile", None), "role", None) or ""
+    return render(request, "stransport/ai_mode.html", {
+        "current_user": request.user,
+        "user_role": user_role,
+    })
+
+
+@csrf_exempt
+@login_required_json
+def ai_offer_api(request):
+    """מתנדב שולח הצעת נסיעה (טקסט חופשי)."""
+    if request.method != "POST":
+        return JsonResponse({"error": "Invalid request"}, status=400)
+    try:
+        if getattr(request.user.profile, "role", None) != "volunteer":
+            return JsonResponse({"error": "רק מתנדבים יכולים לפרסם הצעת נסיעה"}, status=403)
+        data = json.loads(request.body or "{}")
+        raw_text = (data.get("raw_text") or "").strip()
+        if not raw_text:
+            return JsonResponse({"error": "יש להזין תיאור הנסיעה"}, status=400)
+        ok, missing = validate_ai_ride_text(raw_text)
+        if not ok:
+            return JsonResponse({
+                "error": "נא לכלול בטקסט: " + ", ".join(missing) + ". לדוגמה: מחר ב-10:00 מתל אביב לחיפה.",
+            }, status=400)
+        offer = RideOffer.objects.create(volunteer=request.user, raw_text=raw_text, status="open")
+        return JsonResponse({"success": True, "id": offer.id, "message": "ההצעה נשמרה ומוצעת למטופלים."})
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
+
+
+@csrf_exempt
+@login_required_json
+def ai_offers_list_api(request):
+    """רשימת הצעות נסיעה פתוחות (למטופל להצגת התאמות)."""
+    if request.method != "GET":
+        return JsonResponse({"error": "Invalid request"}, status=400)
+    try:
+        offers = RideOffer.objects.filter(status="open").select_related("volunteer").order_by("-created_at")[:50]
+        data = [
+            {
+                "id": o.id,
+                "raw_text": o.raw_text,
+                "volunteer_username": o.volunteer.username,
+                "created_at": o.created_at.isoformat(),
+            }
+            for o in offers
+        ]
+        return JsonResponse({"offers": data})
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
+
+
+@csrf_exempt
+@login_required_json
+def ai_request_api(request):
+    """מטופל שולח בקשת טקסט חופשי → מחזיר התאמות מהצעות קיימות (לוגיקה פשוטה) + אפשרות ליצור בקשה מסודרת."""
+    if request.method != "POST":
+        return JsonResponse({"error": "Invalid request"}, status=400)
+    try:
+        if getattr(request.user.profile, "role", None) != "sick":
+            return JsonResponse({"error": "רק מטופלים יכולים לשלוח בקשת נסיעה במצב AI"}, status=403)
+        data = json.loads(request.body or "{}")
+        raw_text = (data.get("raw_text") or "").strip()
+        if not raw_text:
+            return JsonResponse({"error": "יש להזין מה אתה צריך"}, status=400)
+        ok, missing = validate_ai_ride_text(raw_text)
+        if not ok:
+            return JsonResponse({
+                "error": "נא לכלול בטקסט: " + ", ".join(missing) + ". לדוגמה: צריך נסיעה ביום ראשון מתל אביב לירושלים.",
+            }, status=400)
+        # ניסיון ליצור בקשה אמיתית (TransportRequest) מהטקסט – פירוק "מ X ל Y" + זמן (בלי מודל AI)
+        created_request_id = None
+        parsed = parse_ai_ride_to_request(raw_text)
+        if parsed:
+            try:
+                pickup = parsed["pickup_address"]
+                dest = parsed["destination"]
+                req_time = parsed["requested_time"]
+                pickup_lat, pickup_lng = None, None
+                dest_lat, dest_lng = None, None
+                coords_pickup = geocode_address(pickup)
+                if coords_pickup:
+                    pickup_lat, pickup_lng = coords_pickup
+                coords_dest = geocode_address(dest)
+                if coords_dest:
+                    dest_lat, dest_lng = coords_dest
+                r = TransportRequest.objects.create(
+                    sick=request.user,
+                    pickup_address=pickup,
+                    pickup_lat=pickup_lat,
+                    pickup_lng=pickup_lng,
+                    destination=dest,
+                    dest_lat=dest_lat,
+                    dest_lng=dest_lng,
+                    requested_time=req_time,
+                    notes="נוצר ממצב AI: " + raw_text[:200],
+                )
+                created_request_id = r.id
+                try:
+                    notify_new_request.delay(r.id)
+                except Exception:
+                    logger.warning("Failed to enqueue notify_new_request", exc_info=True)
+                broadcast_request_event("request_created", r)
+            except Exception as e:
+                logger.warning("AI create request failed: %s", e, exc_info=True)
+        # התאמת AI: דירוג הצעות לפי התאמה לבקשה (OpenAI אם יש AI_API_KEY, אחרת מילות מפתח)
+        offers_qs = RideOffer.objects.filter(status="open").select_related("volunteer").order_by("-created_at")[:20]
+        offers_list = [
+            {
+                "id": o.id,
+                "raw_text": o.raw_text,
+                "volunteer_username": o.volunteer.username,
+                "created_at": o.created_at.isoformat(),
+            }
+            for o in offers_qs
+        ]
+        request_summary = {}
+        if parsed:
+            request_summary = {
+                "pickup": parsed.get("pickup_address", ""),
+                "destination": parsed.get("destination", ""),
+                "time_text": raw_text,
+            }
+        else:
+            request_summary = {"pickup": "", "destination": "", "time_text": raw_text}
+        try:
+            from .ai_matching import ai_match_offers_to_request
+            matches = ai_match_offers_to_request(request_summary, offers_list)
+        except Exception as e:
+            logger.warning("AI matching failed, using raw list: %s", e)
+            matches = [{**o, "score": 0, "reason": ""} for o in offers_list]
+        message = "להצעות למעלה תוכל להגיב או ליצור בקשה מסודרת מדף הבית."
+        if created_request_id:
+            message = "נוצרה בקשה בהתאם לטקסט (דף הבית). מומלץ לעדכן כתובות מדויקות אם צריך."
+        return JsonResponse({
+            "success": True,
+            "matches": matches,
+            "created_request_id": created_request_id,
+            "message": message,
+        })
     except Exception as e:
         return JsonResponse({"error": str(e)}, status=500)

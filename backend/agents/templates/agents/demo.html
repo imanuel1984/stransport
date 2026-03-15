@@ -1,0 +1,16 @@
+{% extends 'stransport/layout.html' %}
+{% block title %}התאמות נסיעות — מערכת הסעות{% endblock %}
+{% block content %}
+  <h1 class="page-title">התאמות אחרונות</h1>
+  <p style="color:#64748b; margin-bottom:16px;">כאן מופיעות התאמות שבוצעו בין בקשות נסיעה של מטופלים למתנדבים (לפי מיקום וזמינות).</p>
+  <ul style="list-style:none; padding:0;">
+    {% for m in matches %}
+      <li style="padding:12px 16px; margin:8px 0; background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px;">
+        <strong>{{ m.created_at }}</strong> — {{ m.patient_name }} הותאם/ה עם {{ m.volunteer_name }} (ציון: {{ m.match_score }})
+      </li>
+    {% empty %}
+      <li style="padding:16px; color:#64748b; text-align:center;">אין עדיין התאמות. התאמות יופיעו אחרי שליחת בקשת נסיעה במצב AI.</li>
+    {% endfor %}
+  </ul>
+{% endblock %}
+

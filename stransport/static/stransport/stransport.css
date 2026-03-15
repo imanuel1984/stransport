@@ -40,6 +40,28 @@ body {
   flex-direction: column;
 }
 
+/* LTR mode: full layout left-to-right (toggle in footer) */
+html.layout-ltr,
+html.layout-ltr body,
+html.layout-ltr nav,
+html.layout-ltr main,
+html.layout-ltr .app-footer,
+html.layout-ltr .app-footer *,
+html.layout-ltr .request-card,
+html.layout-ltr .panel,
+html.layout-ltr form,
+html.layout-ltr .page-title,
+html.layout-ltr .no-requests {
+  direction: ltr !important;
+  text-align: left !important;
+}
+html.layout-ltr .request-card.open { border-left: none; border-right: 6px solid var(--accent); }
+html.layout-ltr .request-card.accepted { border-left: none; border-right: 6px solid #22c55e; }
+html.layout-ltr .request-card.closed { border-left: none; border-right: 6px solid #94a3b8; }
+html.layout-ltr .request-card.request-expired { border-left: none; border-right: 6px solid #eab308; }
+html.layout-ltr [dir="rtl"] .password-toggle-wrap,
+html.layout-ltr .password-toggle-wrap { flex-direction: row !important; }
+
 nav {
   background: linear-gradient(120deg, var(--bg-1), var(--bg-2));
   color: white;

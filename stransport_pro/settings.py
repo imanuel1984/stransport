@@ -59,6 +59,8 @@ INSTALLED_APPS = [
     'channels',
     'stransport',
     'trivia',
+    # Agents app provides AI matching and background tasks (module path includes backend)
+    'backend.agents',
 ]
 
 # Middleware configuration
@@ -69,9 +71,10 @@ MIDDLEWARE = [
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
-    'stransport.middleware.EnsureProfileMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    # לוג שגיאות שרת לקובץ errors.log (לשימוש ה-AI)
+    'stransport.middleware.ErrorsLogMiddleware',
 ]
 
 ROOT_URLCONF = 'stransport_pro.urls'
@@ -259,16 +262,16 @@ LOGGING = {
 }
 
 # CSRF & Security — ברשת חובה להגדיר CSRF_TRUSTED_ORIGINS עם כתובת האתר (https://...)
+_DEFAULT_CSRF_ORIGINS = "http://localhost:8000,http://127.0.0.1:8000,https://stransport-djm8.onrender.com"
 CSRF_TRUSTED_ORIGINS = [
     origin.strip()
-    for origin in os.environ.get(
-        "CSRF_TRUSTED_ORIGINS",
-        "http://localhost:8000,http://127.0.0.1:8000",
-    ).split(",")
+    for origin in os.environ.get("CSRF_TRUSTED_ORIGINS", _DEFAULT_CSRF_ORIGINS).split(",")
     if origin.strip()
 ]
 CSRF_COOKIE_SECURE = not DEBUG
 SESSION_COOKIE_SECURE = not DEBUG
+SESSION_COOKIE_DOMAIN = None  # use request host (important behind proxy e.g. Render)
+SESSION_SAVE_EVERY_REQUEST = True
 CSRF_COOKIE_HTTPONLY = False
 SESSION_COOKIE_HTTPONLY = True
 CSRF_COOKIE_SAMESITE = "Lax"

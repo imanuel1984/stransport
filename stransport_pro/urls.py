@@ -30,6 +30,8 @@ urlpatterns = [
 
     # Include your app's URLs (VERY IMPORTANT)
     path("", include("stransport.urls")),
+    # Agents app API endpoints
+    path("", include("backend.agents.urls")),
     path("trivia/", include("trivia.urls")),
     path("api/trivia/", include("trivia.api_urls")),
 

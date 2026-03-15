@@ -1,0 +1,28 @@
+---
+description: Where to find client/deploy errors so the AI can debug with full context
+alwaysApply: true
+---
+
+# גישה לשגיאות קונסול ו־Deploy
+
+## איפה השגיאות נשמרות
+
+- **קובץ אחד:** `errors.log` **בשורש הפרויקט** (ליד `manage.py`).
+  - **קונסול (React):** נשלח מ־errorTracker.js ל־POST /api/errors/ ונרשם לקובץ.
+  - **שרת / דיפלוי:** שגיאות 500 נרשמות לאותו קובץ דרך ErrorsLogMiddleware.
+- **API:** `GET /api/errors/latest/` מחזיר 20 השגיאות האחרונות כ־JSON.
+
+## התנהגות פרואקטיבית (כשמבקשים לתקן / דיבאג)
+
+1. **בכל בקשת דיבאג או תיקון שגיאות** — קרא קודם את `errors.log` (משורש הפרויקט).
+2. אם הקובץ ריק או לא קיים, אפשר להריץ: `curl -s http://localhost:8000/api/errors/latest/` (כש־Django רץ).
+3. לפי התוכן (message, stack, source, line, url, kind) — אבחן, הצע תיקון קוד, והסבר.
+
+## אוטומציה
+
+- **אין** תהליך שרץ ברקע ומתקן שגיאות בלי שהמשתמש פונה. רק כשהמשתמש כותב (למשל "תתקן את השגיאות", "מה השגיאות?", "דיבאג") — קרא את `errors.log`, הצג סיכום, והצע/בצע תיקון.
+
+## פורמט שורה ב־errors.log
+
+כל שורה היא JSON: `message`, `stack`, `source`, `line`, `column`, `timestamp`, `url`, `kind`.  
+`kind` = `"server"` לשגיאות שרת, אחרת קונסול/פרונט.

@@ -1,0 +1,78 @@
+/* STRANSPORT – גלובלי, נטען מ-index.html */
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  background: #f1f5f9;
+  color: #1e293b;
+  min-height: 100vh;
+  direction: rtl;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+.app {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 24px 16px;
+}
+
+.app h1 {
+  font-size: 1.75rem;
+  font-weight: 700;
+  text-align: center;
+  margin: 0 0 24px;
+  color: #0f172a;
+  letter-spacing: 0.02em;
+}
+
+.rides-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.ride-card {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 16px 20px;
+  margin-bottom: 12px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+}
+
+.ride-card:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+.ride-card .route {
+  font-size: 1rem;
+  line-height: 1.5;
+  color: #334155;
+}
+
+.ride-card .arrow {
+  margin: 0 6px;
+  color: #94a3b8;
+  font-weight: 600;
+}
+
+.app-loading,
+.app-empty {
+  text-align: center;
+  color: #64748b;
+  padding: 24px;
+  font-size: 0.95rem;
+}
+
+.app-error {
+  text-align: center;
+  color: #b91c1c;
+  padding: 24px;
+  font-size: 0.95rem;
+}

@@ -103,3 +103,26 @@ class VolunteerLocation(models.Model):
 
     def __str__(self):
         return f"Location for {self.assignment} @ ({self.lat}, {self.lng})"
+
+
+class RideOffer(models.Model):
+    """הצעת נסיעה ממתנדב (מצב AI) – טקסט חופשי, נשמר ומוצע למטופלים."""
+    volunteer = models.ForeignKey(User, on_delete=models.CASCADE, related_name="ride_offers")
+    raw_text = models.TextField(help_text="תיאור חופשי של הנסיעה המתוכננת")
+    created_at = models.DateTimeField(auto_now_add=True)
+    status = models.CharField(
+        max_length=20,
+        choices=[("open", "פתוח"), ("matched", "הותאם"), ("cancelled", "בוטל")],
+        default="open",
+    )
+    # שדות מפוענחים (אופציונלי, למילוי ע\"י AI/לוגיקה בהמשך)
+    parsed_date = models.DateField(null=True, blank=True)
+    parsed_time = models.TimeField(null=True, blank=True)
+    parsed_from = models.CharField(max_length=255, blank=True)
+    parsed_to = models.CharField(max_length=255, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.volunteer.username}: {self.raw_text[:50]}..."

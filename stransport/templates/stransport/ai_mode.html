@@ -1,0 +1,139 @@
+{% extends "stransport/layout.html" %}
+{% block title %}מצב AI — מערכת הסעות{% endblock %}
+
+{% block content %}
+<input type="hidden" name="csrfmiddlewaretoken" value="{{ csrf_token }}">
+<h1 class="page-title">מצב AI</h1>
+<p style="color:#475569; margin-bottom:16px;">תאר בטקסט חופשי מה מתכנן או מה נדרש (חובה: מוצא, יעד, זמן). המערכת תפרסר את הטקסט, תיצור בקשה אמיתית אם אפשר, ותציג הצעות מתאימות <strong>ממוינות לפי התאמת AI</strong> (ציון + הסבר). אם מוגדר <code>AI_API_KEY</code> — משתמשים ב־OpenAI לדירוג; אחרת — התאמה לפי מילות מפתח.</p>
+
+{% if user_role == "volunteer" %}
+<div class="panel">
+  <h2>הצעת נסיעה (מתנדב)</h2>
+  <p class="field-hint">חובה לכלול: <strong>מוצא</strong> (מאיפה), <strong>יעד</strong> (לאן), <strong>זמן</strong> (תאריך/שעה). ההצעה תישמר ומוצעת למטופלים.</p>
+  <textarea id="ai-offer-text" rows="4" placeholder="למשל: מחר ב-10:00 מתל אביב לחיפה, יש מקום לאחד." style="width:100%;max-width:480px;padding:10px;border:1px solid #cbd5e1;border-radius:8px;"></textarea>
+  <div class="field-error" id="ai-offer-error"></div>
+  <button type="button" class="button" id="ai-offer-submit" style="margin-top:10px;">שלח הצעת נסיעה</button>
+  <div id="ai-offer-success" style="display:none; margin-top:10px; padding:10px; background:#f0fdf4; border:1px solid #86efac; border-radius:8px; color:#166534;"></div>
+</div>
+{% endif %}
+
+{% if user_role == "sick" %}
+<div class="panel">
+  <h2>מה אני צריך (מטופל)</h2>
+  <p class="field-hint">חובה לכלול: <strong>מוצא</strong> (מאיפה), <strong>יעד</strong> (לאן), <strong>זמן</strong> (תאריך/שעה). תקבל הצעות מתאימות או תוכל ליצור בקשה מסודרת מדף הבית.</p>
+  <textarea id="ai-request-text" rows="4" placeholder="למשל: צריך נסיעה ביום ראשון מתל אביב לירושלים." style="width:100%;max-width:480px;padding:10px;border:1px solid #cbd5e1;border-radius:8px;"></textarea>
+  <div class="field-error" id="ai-request-error"></div>
+  <button type="button" class="button" id="ai-request-submit" style="margin-top:10px;">חפש התאמות / הצעות</button>
+  <div id="ai-request-success" style="display:none; margin-top:10px; padding:10px; background:#f0fdf4; border:1px solid #86efac; border-radius:8px; color:#166534;"></div>
+  <div id="ai-matches-list" style="margin-top:14px;"></div>
+</div>
+{% endif %}
+
+{% if user_role != "volunteer" and user_role != "sick" %}
+<p style="color:#64748b;">מצב AI זמין למתנדבים (לפרסום הצעת נסיעה) ולמטופלים (לחיפוש התאמות). אין לך תפקיד מתאים כרגע.</p>
+{% endif %}
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+(function() {
+  var csrf = document.querySelector('input[name="csrfmiddlewaretoken"]');
+  var csrfToken = csrf ? csrf.value : (document.cookie.match(/csrftoken=([^;]+)/) || [])[1];
+
+  function postJson(url, body) {
+    return fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': csrfToken || ''
+      },
+      body: JSON.stringify(body),
+      credentials: 'same-origin'
+    }).then(function(r) { return r.json(); });
+  }
+
+  // מתנדב: שליחת הצעת נסיעה
+  var offerBtn = document.getElementById('ai-offer-submit');
+  if (offerBtn) {
+    offerBtn.addEventListener('click', function() {
+      var textarea = document.getElementById('ai-offer-text');
+      var errEl = document.getElementById('ai-offer-error');
+      var okEl = document.getElementById('ai-offer-success');
+      var raw = (textarea && textarea.value || '').trim();
+      errEl.textContent = '';
+      okEl.style.display = 'none';
+      if (!raw) {
+        errEl.textContent = 'יש להזין תיאור הנסיעה.';
+        return;
+      }
+      offerBtn.disabled = true;
+      postJson('{% url "ai_offer_api" %}', { raw_text: raw })
+        .then(function(res) {
+          if (res.error) {
+            errEl.textContent = res.error;
+            return;
+          }
+          okEl.textContent = res.message || 'ההצעה נשמרה.';
+          okEl.style.display = 'block';
+          textarea.value = '';
+        })
+        .catch(function() { errEl.textContent = 'שגיאה בתקשורת.'; })
+        .finally(function() { offerBtn.disabled = false; });
+    });
+  }
+
+  // מטופל: שליחת בקשת טקסט → הצעות
+  var requestBtn = document.getElementById('ai-request-submit');
+  if (requestBtn) {
+    requestBtn.addEventListener('click', function() {
+      var textarea = document.getElementById('ai-request-text');
+      var errEl = document.getElementById('ai-request-error');
+      var okEl = document.getElementById('ai-request-success');
+      var listEl = document.getElementById('ai-matches-list');
+      var raw = (textarea && textarea.value || '').trim();
+      errEl.textContent = '';
+      okEl.style.display = 'none';
+      listEl.innerHTML = '';
+      if (!raw) {
+        errEl.textContent = 'יש להזין מה אתה צריך.';
+        return;
+      }
+      requestBtn.disabled = true;
+      postJson('{% url "ai_request_api" %}', { raw_text: raw })
+        .then(function(res) {
+          if (res.error) {
+            errEl.textContent = res.error;
+            return;
+          }
+          var msg = res.message || 'הנה ההצעות המתאימות.';
+          if (res.created_request_id) {
+            okEl.innerHTML = msg + ' <a href="/" style="margin-right:8px;color:#059669;font-weight:600;">צפה בדף הבית</a>';
+          } else {
+            okEl.textContent = msg;
+          }
+          okEl.style.display = 'block';
+          if (res.matches && res.matches.length) {
+            var html = '<h3 style="margin-top:12px;">הצעות ממוינות לפי התאמת AI</h3><ul style="list-style:none;padding:0;">';
+            res.matches.forEach(function(m) {
+              var score = m.score != null ? m.score : '';
+              var reason = (m.reason || '').replace(/</g,'&lt;');
+              html += '<li style="padding:12px;margin:8px 0;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;">';
+              if (score !== '' && score !== undefined) html += '<span style="color:#059669;font-weight:700;">ציון התאמה: ' + score + '</span><br>';
+              html += '<strong>' + (m.raw_text || '').replace(/</g,'&lt;') + '</strong>';
+              html += '<br><small>מתנדב: ' + (m.volunteer_username || '').replace(/</g,'&lt;') + '</small>';
+              if (reason) html += '<br><small style="color:#64748b;">' + reason + '</small>';
+              html += '</li>';
+            });
+            html += '</ul>';
+            listEl.innerHTML = html;
+          } else {
+            listEl.innerHTML = '<p style="color:#64748b;">אין כרגע הצעות תואמות. תוכל ליצור בקשה מסודרת מדף הבית.</p>';
+          }
+        })
+        .catch(function() { errEl.textContent = 'שגיאה בתקשורת.'; })
+        .finally(function() { requestBtn.disabled = false; });
+    });
+  }
+})();
+</script>
+{% endblock %}

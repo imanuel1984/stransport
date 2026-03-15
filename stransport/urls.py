@@ -1,5 +1,5 @@
 from django.urls import path
-from . import views
+from . import views, error_views
 from .views import FaviconView
 
 urlpatterns = [
@@ -7,6 +7,7 @@ urlpatterns = [
     path("", views.home, name="home"),
     path("signup/", views.signup, name="signup"),
     path("api/auth/login-status/", views.login_status_api, name="login_status_api"),
+    path("api/rides/", views.rides_api, name="rides_api"),
     path("api/requests/", views.requests_api, name="requests_api"),
     path("api/requests/create/", views.create_request_api, name="create_request_api"),
     path("api/requests/accept/<int:req_id>/", views.accept_request_api, name="accept_request_api"),
@@ -20,5 +21,11 @@ urlpatterns = [
     path("api/requests/location/<int:req_id>/", views.volunteer_location_api, name="volunteer_location_api"),
     path("api/route/suggest/", views.suggest_route_api, name="suggest_route_api"),
     path("api/route/links/", views.route_links_api, name="route_links_api"),
-
+    path("ai-mode/", views.ai_mode_page, name="ai_mode"),
+    path("api/ai/offer/", views.ai_offer_api, name="ai_offer_api"),
+    path("api/ai/request/", views.ai_request_api, name="ai_request_api"),
+    path("api/ai/offers/", views.ai_offers_list_api, name="ai_offers_list_api"),
+    # Error tracking (frontend console errors)
+    path("api/errors/", error_views.errors_api, name="errors_api"),
+    path("api/errors/latest/", error_views.errors_latest_api, name="errors_latest_api"),
 ]

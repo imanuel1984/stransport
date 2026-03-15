@@ -1,13 +1,86 @@
 // Dummy connectRealtime to prevent ReferenceError if not defined elsewhere
 function connectRealtime() {}
+// AI Mode UI handlers
+document.addEventListener('DOMContentLoaded', function() {
+  var aiLaunch = document.getElementById('ai-mode-launch');
+  var aiModal = document.getElementById('ai-mode-modal');
+  var aiCancel = document.getElementById('ai_cancel');
+  var aiSubmit = document.getElementById('ai_submit');
+  var aiError = document.getElementById('ai_error');
+  var aiSuccess = document.getElementById('ai_success');
+
+  function showModal() {
+    if (aiModal) aiModal.style.display = 'block';
+    if (aiError) { aiError.style.display = 'none'; aiError.textContent = ''; }
+    if (aiSuccess) { aiSuccess.style.display = 'none'; aiSuccess.textContent = ''; }
+  }
+  function hideModal() {
+    if (aiModal) aiModal.style.display = 'none';
+  }
+
+  if (aiLaunch) aiLaunch.addEventListener('click', showModal);
+  if (aiCancel) aiCancel.addEventListener('click', hideModal);
+
+  if (aiSubmit) aiSubmit.addEventListener('click', async function() {
+    var patient = document.getElementById('ai_patient_name').value.trim();
+    var pickup = document.getElementById('ai_pickup').value.trim();
+    var dest = document.getElementById('ai_destination').value.trim();
+    var date = document.getElementById('ai_date').value;
+    var time = document.getElementById('ai_time').value;
+
+    if (!pickup || !dest || !date || !time) {
+      if (aiError) { aiError.style.display = 'block'; aiError.textContent = 'יש למלא מקור, יעד, תאריך ושעה.'; }
+      return;
+    }
+
+    var iso = new Date(date + 'T' + time).toISOString();
+
+    // POST to /api/request-ride
+    try {
+      const res = await fetch('/api/request-ride', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCookie('csrftoken') },
+        body: JSON.stringify({ patient_name: patient || 'מטופל', pickup_location: pickup, destination: dest, requested_time: iso })
+      });
+      const json = await safeJson(res);
+      if (!json.success) {
+        if (aiError) { aiError.style.display = 'block'; aiError.textContent = json.error || 'שגיאה ביצירת בקשה'; }
+        return;
+      }
+      if (aiSuccess) { aiSuccess.style.display = 'block'; aiSuccess.textContent = 'הבקשה נשלחה בהצלחה'; }
+      setTimeout(hideModal, 1200);
+    } catch (err) {
+      if (aiError) { aiError.style.display = 'block'; aiError.textContent = 'שגיאה ברשת.'; }
+    }
+  });
+  // Show matches button (redirect to demo page)
+  var showBtn = document.getElementById('show-agent-matches');
+  if (showBtn) {
+    showBtn.addEventListener('click', function() {
+      window.location.href = '/agents/demo';
+    });
+  }
+});
 // Suggest route for selected requests
 async function suggestRoute() {
+    // Track requests missing pickup/destination coordinates
     const missingPickup = [];
     const missingDest = [];
     const validRequestIds = [];
-    const mode = routeModeSelect ? routeModeSelect.value : 'pickup_then_dropoff';
-    const startLat = Number(routeStartLat && routeStartLat.value);
-    const startLng = Number(routeStartLng && routeStartLng.value);
+    // Read mode safely (fallback to pickup_then_dropoff)
+    const mode = (typeof routeModeSelect !== 'undefined' && routeModeSelect && routeModeSelect.value)
+      ? routeModeSelect.value
+      : 'pickup_then_dropoff';
+    // Parse start coordinates defensively: empty strings should not coerce to 0
+    const parseCoord = (el) => {
+      if (!el || typeof el.value === 'undefined' || el.value === null) return null;
+      const v = String(el.value).trim();
+      if (v === '') return null;
+      const n = parseFloat(v);
+      return Number.isFinite(n) ? n : null;
+    };
+    const startLat = parseCoord(routeStartLat);
+    const startLng = parseCoord(routeStartLng);
 
     selectedRouteIds.forEach(id => {
       const meta = requestMeta.get(id) || {};
@@ -76,10 +149,14 @@ async function suggestRoute() {
         }
 
         const summary = document.createElement('div');
-        const km = (json.total_distance_m / 1000).toFixed(1);
-        const mins = Math.round(json.total_duration_s / 60);
+        // Defensive: ensure numeric totals exist before computing/formatting
+        const totalMeters = Number.isFinite(Number(json.total_distance_m)) ? Number(json.total_distance_m) : 0;
+        const totalSeconds = Number.isFinite(Number(json.total_duration_s)) ? Number(json.total_duration_s) : 0;
+        const km = (totalMeters / 1000).toFixed(1);
+        const mins = Math.round(totalSeconds / 60);
+        const matrixSource = json.matrix_source || '';
         summary.className = 'route-stop';
-        summary.textContent = `סה"כ: ${km} ק"מ · ${mins} דק' (${json.matrix_source})`;
+        summary.textContent = `סה"כ: ${km} ק"מ · ${mins} דק' (${matrixSource})`;
         routeResults.appendChild(summary);
 
         if (json.warning) {
@@ -125,7 +202,10 @@ async function suggestRoute() {
 
           const list = document.createElement('div');
           list.style.marginTop = '8px';
-          linksJson.google_legs.forEach((url, idx) => {
+          // Defensive: ensure arrays exist before iterating and lengths match
+          const googleLegs = Array.isArray(linksJson.google_legs) ? linksJson.google_legs : [];
+          const wazeLegs = Array.isArray(linksJson.waze_legs) ? linksJson.waze_legs : [];
+          googleLegs.forEach((url, idx) => {
             const row = document.createElement('div');
             row.className = 'route-stop';
             const googleLink = document.createElement('a');
@@ -135,7 +215,7 @@ async function suggestRoute() {
             googleLink.textContent = `Google ${idx + 1}`;
             googleLink.className = 'button';
             const wazeLink = document.createElement('a');
-            wazeLink.href = linksJson.waze_legs[idx];
+            wazeLink.href = wazeLegs[idx] || '#';
             wazeLink.target = '_blank';
             wazeLink.rel = 'noopener';
             wazeLink.textContent = `Waze ${idx + 1}`;
@@ -155,18 +235,35 @@ async function suggestRoute() {
         if (routeStartMarker) {
           map.removeLayer(routeStartMarker);
         }
-        const coords = [
-          [startLat, startLng],
-          ...json.stops.map(stop => [stop.lat, stop.lng]),
-        ];
-        routeLine = L.polyline(coords, { color: '#f97316', weight: 4 }).addTo(map);
-        routeStartMarker = L.circleMarker([startLat, startLng], {
-          radius: 6,
-          color: '#0f172a',
-          fillColor: '#f97316',
-          fillOpacity: 1,
-        }).addTo(map);
-        map.fitBounds(routeLine.getBounds(), { padding: [24, 24] });
+        // Build coords defensively and only add valid numeric coordinate pairs
+        const stopsCoords = Array.isArray(json.stops) ? json.stops.map(stop => [Number(stop.lat), Number(stop.lng)]) : [];
+        const startCoord = (Number.isFinite(startLat) && Number.isFinite(startLng)) ? [[startLat, startLng]] : [];
+        const coords = [...startCoord, ...stopsCoords].filter(pair =>
+          Array.isArray(pair) && pair.length === 2 && Number.isFinite(pair[0]) && Number.isFinite(pair[1])
+        );
+
+        if (coords.length > 0) {
+          routeLine = L.polyline(coords, { color: '#f97316', weight: 4 }).addTo(map);
+          if (startCoord.length > 0) {
+            routeStartMarker = L.circleMarker([startLat, startLng], {
+              radius: 6,
+              color: '#0f172a',
+              fillColor: '#f97316',
+              fillOpacity: 1,
+            }).addTo(map);
+          }
+          // Only call fitBounds when polyline has valid bounds
+          try {
+            const bounds = routeLine.getBounds();
+            if (bounds && bounds.isValid && bounds.isValid()) {
+              map.fitBounds(bounds, { padding: [24, 24] });
+            } else {
+              map.fitBounds(routeLine.getBounds(), { padding: [24, 24] });
+            }
+          } catch (_) {
+            // ignore map errors
+          }
+        }
       }
 
       if (routeNavBtn) {
@@ -283,6 +380,60 @@ function applyIsraelRestriction(element) {
   } catch (_) {
     // Ignore attribute errors for older builds.
   }
+
+// --- Error tracker: שולח שגיאות קונסול/טריוויה לשרת (errors.log) ---
+(function initErrorTracker() {
+  try {
+    const originalError = window.console && window.console.error ? window.console.error.bind(window.console) : null;
+
+    function sendError(payload) {
+      try {
+        fetch("/api/errors/", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            ...payload,
+            url: window.location.href,
+            timestamp: new Date().toISOString(),
+            kind: "client",
+          }),
+        }).catch(() => {});
+      } catch (_e) {
+        // ignore
+      }
+    }
+
+    window.addEventListener("error", function (event) {
+      try {
+        const message = event.message || String(event.error || "");
+        const stack = event.error && event.error.stack ? String(event.error.stack) : "";
+        sendError({
+          message,
+          stack,
+          source: event.filename || "",
+          line: event.lineno,
+          column: event.colno,
+        });
+      } catch (_e) {
+        // ignore
+      }
+    });
+
+    window.console.error = function (...args) {
+      try {
+        const message = args.map(String).join(" ");
+        sendError({ message, stack: "", source: "console.error" });
+      } catch (_e) {
+        // ignore
+      }
+      if (originalError) {
+        originalError(...args);
+      }
+    };
+  } catch (_e) {
+    // ignore any init failure
+  }
+})();
 }
 
 function normalizeIsraeliPhone(value) {

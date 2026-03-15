@@ -33,9 +33,7 @@
     <button type="button" class="password-toggle-btn" id="signup-password1-toggle" aria-label="הצג סיסמה" title="הצג/הסתר סיסמה"><span class="pw-icon" aria-hidden="true"></span></button>
   </div>
   <div class="field-error" id="password1-error"></div>
-  <div class="muted" style="margin:4px 0 10px;">
-    סיסמה צריכה להיות לפחות 8 תווים, לא נפוצה, ולא דומה לשם המשתמש.
-  </div>
+  
 
   <label>אימות סיסמה</label>
   <div class="password-toggle-wrap">
@@ -61,7 +59,7 @@
     <option value="volunteer">מתנדב</option>
   </select>
 
-  <button type="submit" class="btn-primary" id="signup-submit" disabled>צור חשבון</button>
+  <button type="submit" class="btn-primary" id="signup-submit">צור חשבון</button>
 
 </form>
 
@@ -71,32 +69,27 @@
 {% block extra_scripts %}
 <script>
 (() => {
-  const signupForm = document.querySelector('form[method="post"]');
   const dd = document.getElementById("roleDD");
   const select = document.getElementById("roleSelect");
   const username = document.getElementById("id_username");
   const password1 = document.getElementById("id_password1");
   const password2 = document.getElementById("id_password2");
   const submitBtn = document.getElementById("signup-submit");
-  const usernameError = document.createElement("div");
   const password1Error = document.getElementById("password1-error");
   const password2Error = document.getElementById("password2-error");
-  const submitError = document.createElement("div");
 
-  usernameError.className = "field-error";
-  usernameError.id = "signup-username-error";
-  submitError.className = "field-error";
-  submitError.id = "signup-submit-error";
-
-  if (username && !document.getElementById("signup-username-error")) {
+  // יצירת מקום להודעת שגיאה לשם המשתמש אם אין
+  let usernameError = document.getElementById("signup-username-error");
+  if (!usernameError && username) {
+    usernameError = document.createElement("div");
+    usernameError.id = "signup-username-error";
+    usernameError.className = "field-error";
     username.insertAdjacentElement("afterend", usernameError);
-  }
-  if (submitBtn && !document.getElementById("signup-submit-error")) {
-    submitBtn.insertAdjacentElement("beforebegin", submitError);
   }
 
   const svgShow = '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
   const svgHide = '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>';
+
   function setupPasswordToggle(btnId, input) {
     const btn = document.getElementById(btnId);
     const iconEl = btn ? btn.querySelector(".pw-icon") : null;
@@ -112,10 +105,93 @@
       updateIcon();
     });
   }
+
   setupPasswordToggle("signup-password1-toggle", password1);
   setupPasswordToggle("signup-password2-toggle", password2);
 
-  if (!dd || !select) return;
+  // ולידציה בסיסית: שם משתמש, סיסמה באורך 8+, סיסמאות תואמות, ותפקיד נבחר
+  function validateForm() {
+    if (!submitBtn) return;
+
+    const usernameVal = username ? username.value.trim() : "";
+    const p1 = password1 ? (password1.value || "") : "";
+    const p2 = password2 ? (password2.value || "") : "";
+    const roleSelected = select && select.value;
+
+    let ok = true;
+
+    if (usernameError) {
+      if (!usernameVal) {
+        usernameError.textContent = "יש להזין שם משתמש.";
+        ok = false;
+      } else {
+        usernameError.textContent = "";
+      }
+    }
+
+    if (password1Error) {
+      if (!p1) {
+        password1Error.textContent = "יש להזין סיסמה.";
+        ok = false;
+      } else {
+        // בדיקת אורך מינימלי
+        if (p1.length < 8) {
+          password1Error.textContent = "סיסמה חייבת להיות לפחות 8 תווים.";
+          ok = false;
+        } else {
+          // בדיקה בסיסית לסיסמה בעייתית: דומה לשם המשתמש או חלשה מדי
+          const lowerPass = p1.toLowerCase();
+          const lowerUser = usernameVal.toLowerCase();
+          const tooSimilarToUser = lowerUser && lowerPass.includes(lowerUser);
+          const onlyDigitsOrOnlyLetters = (/^[0-9]+$/.test(p1) || /^[A-Za-z]+$/.test(p1));
+
+          if (tooSimilarToUser || onlyDigitsOrOnlyLetters) {
+            password1Error.textContent = "בחר סיסמה שלא דומה לשם המשתמש ומכילה גם אותיות וגם ספרות.";
+            ok = false;
+          } else {
+            password1Error.textContent = "";
+          }
+        }
+      }
+    }
+
+    if (password2Error) {
+      if (!p2) {
+        password2Error.textContent = "יש לאשר את הסיסמה.";
+        ok = false;
+      } else if (p1 && p2 && p1 !== p2) {
+        password2Error.textContent = "הסיסמאות אינן תואמות.";
+        ok = false;
+      } else {
+        password2Error.textContent = "";
+      }
+    }
+
+    if (!roleSelected) {
+      ok = false;
+    }
+
+    submitBtn.disabled = !ok;
+  }
+
+  if (username) {
+    username.addEventListener("input", validateForm);
+  }
+  if (password1) {
+    password1.addEventListener("input", validateForm);
+  }
+  if (password2) {
+    password2.addEventListener("input", validateForm);
+  }
+  if (select) {
+    select.addEventListener("change", validateForm);
+  }
+
+  if (!dd || !select) {
+    // הרצה ראשונית כדי לסנכרן כפתור במצבי מילוי אוטומטי
+    validateForm();
+    return;
+  }
 
   const trigger = dd.querySelector(".role-dd-trigger");
   const label = dd.querySelector(".role-dd-label");
@@ -146,6 +222,8 @@
       items.forEach(i => i.classList.remove("active"));
       item.classList.add("active");
       closeDD();
+      // לעדכן מיידית את מצב הכפתור אחרי בחירת תפקיד
+      validateForm();
     });
   });
 
@@ -154,76 +232,8 @@
     if (e.key === "Escape") closeDD();
   });
 
-  function validatePasswords() {
-    if (!password1 || !password2 || !submitBtn) return false;
-
-    const usernameValid = Boolean(username && username.value.trim());
-    const p1 = password1.value || "";
-    const p2 = password2.value || "";
-    const roleSelected = Boolean(select && select.value);
-    let isValid = true;
-
-    if (usernameError) {
-      usernameError.textContent = usernameValid || !username || !username.value ? "" : "יש להזין שם משתמש.";
-    }
-    if (!usernameValid) {
-      isValid = false;
-    }
-
-    if (p1.length > 0 && p1.length < 8) {
-      password1Error.textContent = "סיסמה חייבת להיות לפחות 8 תווים.";
-      isValid = false;
-    } else {
-      password1Error.textContent = "";
-    }
-
-    if (p2.length > 0 && p1 !== p2) {
-      password2Error.textContent = "הסיסמאות אינן תואמות.";
-      isValid = false;
-    } else if (p2.length > 0) {
-      password2Error.textContent = "";
-    }
-
-    if (!p1 || !p2) {
-      isValid = false;
-    }
-
-    if (!roleSelected) {
-      isValid = false;
-    }
-
-    submitBtn.disabled = !isValid;
-    if (submitError) {
-      submitError.textContent = isValid ? "" : "לא ניתן להירשם עד שכל השדות הנדרשים תקינים.";
-    }
-    return isValid;
-  }
-
-  if (username) {
-    username.addEventListener("input", validatePasswords);
-  }
-  if (password1 && password2 && submitBtn) {
-    password1.addEventListener("input", validatePasswords);
-    password2.addEventListener("input", validatePasswords);
-  }
-  if (select) {
-    select.addEventListener("change", validatePasswords);
-  }
-  if (signupForm) {
-    signupForm.addEventListener("submit", function(event) {
-      if (!validatePasswords()) {
-        event.preventDefault();
-        if (username && !username.value.trim()) {
-          username.focus();
-        } else if (password1 && password1.value.length < 8) {
-          password1.focus();
-        } else if (password2 && password1 && password1.value !== password2.value) {
-          password2.focus();
-        }
-      }
-    });
-  }
-  validatePasswords();
+  // קריאה ראשונית – אם השדות כבר מולאו (Autofill), נעדכן את מצב הכפתור והודעות השגיאה
+  validateForm();
 })();
 </script>
 {% endblock %}

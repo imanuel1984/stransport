@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "errors": {
+      "command": "python",
+      "args": ["mcp_errors.py"]
+    }
+  }
+}

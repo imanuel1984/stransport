@@ -9,12 +9,17 @@ services:
       - .env.example
     environment:
       - DJANGO_SETTINGS_MODULE=stransport_pro.settings
+      - DB_HOST=db
+      # override .env.example so Django uses DB_* (db host) instead of DATABASE_URL (invalid host)
+      - DATABASE_URL=
     volumes:
       - .:/app
     depends_on:
       - db
       - rabbitmq
       - redis
+    networks:
+      - default
 
   db:
     image: postgres:16-alpine
@@ -25,6 +30,8 @@ services:
       - .env.example
     volumes:
       - db_data:/var/lib/postgresql/data
+    networks:
+      - default
 
   rabbitmq:
     image: rabbitmq:3-management
@@ -32,12 +39,16 @@ services:
     ports:
       - "5672:5672"
       - "15672:15672"
+    networks:
+      - default
 
   redis:
     image: redis:7-alpine
     container_name: stransport-redis
     ports:
       - "6379:6379"
+    networks:
+      - default
 
   celery_worker:
     build: .
@@ -47,12 +58,16 @@ services:
       - .env.example
     environment:
       - DJANGO_SETTINGS_MODULE=stransport_pro.settings
+      - DB_HOST=db
+      - DATABASE_URL=
     volumes:
       - .:/app
     depends_on:
       - db
       - rabbitmq
       - redis
+    networks:
+      - default
 
   celery_beat:
     build: .
@@ -62,12 +77,20 @@ services:
       - .env.example
     environment:
       - DJANGO_SETTINGS_MODULE=stransport_pro.settings
+      - DB_HOST=db
+      - DATABASE_URL=
     volumes:
       - .:/app
     depends_on:
       - db
       - rabbitmq
       - redis
+    networks:
+      - default
+
+networks:
+  default:
+    name: stransport_net
 
 volumes:
   db_data:

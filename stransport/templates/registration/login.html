@@ -33,8 +33,8 @@
 
 <h2>כניסה</h2>
 {% if form.errors %}
-<div class="panel" style="border:1px solid #ef4444;background:#fef2f2;padding:12px;border-radius:8px;margin:12px 0;">
-  <strong>שם משתמש או סיסמה שגויים.</strong>
+<div class="panel login-error-panel" role="alert" style="border:2px solid #ef4444;background:#fef2f2;padding:12px;border-radius:8px;margin:12px 0;">
+  <strong>שם משתמש או סיסמה שגויים.</strong> ודא שהסיסמה זהה ל-ADMIN_PASSWORD ב-Render.
 </div>
 {% endif %}
 <form method="post">
@@ -49,7 +49,7 @@
     </div><br>
     <div class="field-error" id="login-password-error"></div>
     <div class="field-error" id="login-submit-error"></div>
-    <button type="submit" id="login-btn" disabled>כניסה</button>
+    <button type="submit" id="login-btn">כניסה</button>
 </form>
 <script>
   const loginForm = document.querySelector('form[method="post"]');
@@ -121,7 +121,7 @@
     loginCredentialsValid = false;
 
     if (!username) {
-      loginBtn.disabled = true;
+      if (loginBtn) loginBtn.disabled = true;
       setLoginMessages({
         usernameMessage: 'יש להזין שם משתמש.',
         submitMessage: 'לא ניתן להיכנס עד ששם המשתמש והסיסמה תואמים למערכת.',
@@ -130,7 +130,7 @@
     }
 
     if (!password) {
-      loginBtn.disabled = true;
+      if (loginBtn) loginBtn.disabled = true;
     }
 
     // אם כבר בדקנו את אותם פרטים והם תקינים – אל תשלח בקשה נוספת ולא תציג "בודק נתונים" שוב
@@ -140,7 +140,7 @@
       lastLoginCheck.valid
     ) {
       loginCredentialsValid = true;
-      loginBtn.disabled = false;
+      if (loginBtn) loginBtn.disabled = !username || !password;
       return;
     }
 
@@ -152,7 +152,7 @@
       submitState: 'error',
     });
 
-    loginBtn.disabled = true;
+    if (loginBtn) loginBtn.disabled = !username || !password;
     const requestId = ++loginValidationRequestId;
     const body = new URLSearchParams({
       username,
@@ -183,7 +183,8 @@
         password,
         valid: loginCredentialsValid,
       };
-      loginBtn.disabled = !loginCredentialsValid;
+      // אפשר כניסה כשיש גם משתמש וגם סיסמה (כדי שהטופס יישלח ו-Django יציג שגיאה או יכניס)
+      loginBtn.disabled = !username || !password;
       setLoginMessages({
         usernameMessage: data.username_message || '',
         usernameState: data.username_valid ? 'success' : 'error',
@@ -197,7 +198,7 @@
     } catch (error) {
       if (requestId !== loginValidationRequestId) return;
       loginCredentialsValid = false;
-      loginBtn.disabled = true;
+      if (loginBtn) loginBtn.disabled = !username || !password;
       setLoginMessages({
         submitMessage: 'לא ניתן לאמת כעת את פרטי ההתחברות. נסה שוב.',
       });
@@ -273,21 +274,25 @@
 
   if (loginForm) {
     loginForm.addEventListener('submit', async function(event) {
-      // אם כבר ידוע שהפרטים תקינים – לא להריץ בדיקה שנייה, לתת לטופס להישלח מיד
-      if (loginCredentialsValid) {
+      var hasUser = usernameInput && usernameInput.value.trim();
+      var hasPass = passwordInput && passwordInput.value;
+      // אם יש גם משתמש וגם סיסמה – תמיד לאפשר שליחה (כדי ש-Django יציג שגיאה או יכניס)
+      if (hasUser && hasPass) {
         return;
       }
+      if (loginCredentialsValid) return;
       event.preventDefault();
       await validateLoginAgainstSystem();
-      if (!usernameInput.value.trim() && usernameInput) {
-        usernameInput.focus();
-      } else if (!passwordInput.value && passwordInput) {
-        passwordInput.focus();
-      } else if (!loginCredentialsValid && passwordInput) {
-        passwordInput.focus();
-      }
+      if (!hasUser && usernameInput) usernameInput.focus();
+      else if (!hasPass && passwordInput) passwordInput.focus();
+      else if (!loginCredentialsValid && passwordInput) passwordInput.focus();
     });
   }
+  // כשהדף נטען עם שגיאת כניסה (לאחר שליחה) – לגלול לשגיאה
+  (function() {
+    var errPanel = document.querySelector('.login-error-panel');
+    if (errPanel) errPanel.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  })();
   // קריאה ראשונית – אם השדות ריקים לא יקרה כלום, אם בדפדפן כבר התמלאו תהיה בדיקה מידית
   validateLoginAgainstSystem();
 </script>
