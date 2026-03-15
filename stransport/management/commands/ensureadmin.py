@@ -2,8 +2,11 @@
 יוצר משתמש אדמין בהפעלה אם לא קיים. לשימוש ב-Render: הגדר ADMIN_PASSWORD ב-Environment.
 """
 import os
+import logging
 from django.core.management.base import BaseCommand
 from django.contrib.auth.models import User
+
+logger = logging.getLogger(__name__)
 
 
 class Command(BaseCommand):
@@ -16,6 +19,14 @@ class Command(BaseCommand):
 
         if User.objects.filter(username=username).exists():
             self.stdout.write(self.style.SUCCESS(f"משתמש '{username}' כבר קיים."))
+            try:
+                from stransport.models import Profile
+                u = User.objects.get(username=username)
+                if not getattr(u, "profile", None):
+                    Profile.objects.get_or_create(user=u, defaults={"role": "volunteer"})
+                    self.stdout.write(self.style.SUCCESS("נוסף Profile לאדמין."))
+            except Exception as e:
+                logger.warning("ensureadmin profile check: %s", e)
             return
 
         if not password:
@@ -24,5 +35,14 @@ class Command(BaseCommand):
             )
             return
 
-        User.objects.create_superuser(username=username, email=email, password=password)
-        self.stdout.write(self.style.SUCCESS(f"נוצר אדמין '{username}'."))
+        try:
+            u = User.objects.create_superuser(username=username, email=email, password=password)
+            try:
+                from stransport.models import Profile
+                Profile.objects.get_or_create(user=u, defaults={"role": "volunteer"})
+            except Exception as e:
+                logger.warning("ensureadmin profile create: %s", e)
+            self.stdout.write(self.style.SUCCESS(f"נוצר אדמין '{username}'."))
+        except Exception as e:
+            logger.exception("ensureadmin failed")
+            self.stdout.write(self.style.ERROR(f"שגיאה: {e}"))
