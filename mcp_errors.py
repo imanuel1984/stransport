@@ -10,7 +10,9 @@ import urllib.request
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
 PORT = 3001
-API_BASE = "http://localhost:8000"
+import os
+
+API_BASE = os.environ.get("ERRORS_API_BASE", "http://localhost:8000")
 LATEST_URL = f"{API_BASE}/api/errors/latest/"
 
 
