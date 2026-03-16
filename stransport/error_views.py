@@ -69,7 +69,3 @@ def errors_latest_api(request):
     except Exception as e:
         r = JsonResponse({"errors": [], "error": str(e)}, status=500)
         return _cors_headers(r)
-<<<<<<< HEAD
-=======
-
->>>>>>> 34d0b0f (Error tracking + auth/trivia fixes)
