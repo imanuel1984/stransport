@@ -1,0 +1,12 @@
+Creating test database for alias 'default'...
+C:\Users\User\AppData\Local\Programs\Python\Python313\Lib\site-packages\django\core\handlers\base.py:61: UserWarning: No directory at: C:\Users\User\.vscode\my mods\stransport_pro\staticfiles\
+  mw_instance = middleware(adapted_handler)
+......Bad Request: /api/route/links/
+......
+----------------------------------------------------------------------
+Ran 12 tests in 42.105s
+
+OK
+Destroying test database for alias 'default'...
+Found 12 test(s).
+System check identified no issues (0 silenced).

@@ -648,6 +648,11 @@ function attachPlacesAutocomplete(input, container, onPlaceSelected) {
         }
       }
 
+// לחשוף ל-scripts חיצוניים (למשל מודל פרסום נסיעות ב-layout)
+if (typeof window !== 'undefined') {
+  window.attachPlacesAutocomplete = attachPlacesAutocomplete;
+}
+
       await handlePlace(place);
     }); // closes forEach
 
@@ -2939,7 +2944,11 @@ function hidePanel(el) {
       }
       if (window.google && window.google.maps && window.google.maps.places && typeof window.__placesInit === 'function') {
         const pickupInput = document.getElementById('pickup-input');
-        if (pickupInput && !pickupInput.__placesElement) {
+        const offerFrom = document.getElementById('offer-from');
+        const aiPickup = document.getElementById('ai_pickup');
+        if ((pickupInput && !pickupInput.__placesElement) ||
+            (offerFrom && !offerFrom.__placesElement) ||
+            (aiPickup && !aiPickup.__placesElement)) {
           window.__placesReady = true;
           window.__placesInit();
         }

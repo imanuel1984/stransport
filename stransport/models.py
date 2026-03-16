@@ -106,7 +106,7 @@ class VolunteerLocation(models.Model):
 
 
 class RideOffer(models.Model):
-    """הצעת נסיעה ממתנדב (מצב AI) – טקסט חופשי, נשמר ומוצע למטופלים."""
+    """הצעת נסיעה ממתנדב (פרסום נסיעה) – טקסט חופשי, נשמר ומוצע למטופלים."""
     volunteer = models.ForeignKey(User, on_delete=models.CASCADE, related_name="ride_offers")
     raw_text = models.TextField(help_text="תיאור חופשי של הנסיעה המתוכננת")
     created_at = models.DateTimeField(auto_now_add=True)

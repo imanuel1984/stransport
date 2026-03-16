@@ -49,7 +49,7 @@
     </div><br>
     <div class="field-error" id="login-password-error"></div>
     <div class="field-error" id="login-submit-error"></div>
-    <button type="submit" id="login-btn">כניסה</button>
+    <button type="submit" id="login-btn" disabled>כניסה</button>
 </form>
 <script>
   const loginForm = document.querySelector('form[method="post"]');
@@ -183,8 +183,8 @@
         password,
         valid: loginCredentialsValid,
       };
-      // אפשר כניסה כשיש גם משתמש וגם סיסמה (כדי שהטופס יישלח ו-Django יציג שגיאה או יכניס)
-      loginBtn.disabled = !username || !password;
+      // הכפתור נפתח רק כששם המשתמש והסיסמה תקינים מול המערכת
+      loginBtn.disabled = !loginCredentialsValid;
       setLoginMessages({
         usernameMessage: data.username_message || '',
         usernameState: data.username_valid ? 'success' : 'error',
@@ -198,7 +198,7 @@
     } catch (error) {
       if (requestId !== loginValidationRequestId) return;
       loginCredentialsValid = false;
-      if (loginBtn) loginBtn.disabled = !username || !password;
+      if (loginBtn) loginBtn.disabled = true;
       setLoginMessages({
         submitMessage: 'לא ניתן לאמת כעת את פרטי ההתחברות. נסה שוב.',
       });
@@ -274,18 +274,20 @@
 
   if (loginForm) {
     loginForm.addEventListener('submit', async function(event) {
-      var hasUser = usernameInput && usernameInput.value.trim();
-      var hasPass = passwordInput && passwordInput.value;
-      // אם יש גם משתמש וגם סיסמה – תמיד לאפשר שליחה (כדי ש-Django יציג שגיאה או יכניס)
-      if (hasUser && hasPass) {
-        return;
-      }
-      if (loginCredentialsValid) return;
       event.preventDefault();
       await validateLoginAgainstSystem();
-      if (!hasUser && usernameInput) usernameInput.focus();
-      else if (!hasPass && passwordInput) passwordInput.focus();
-      else if (!loginCredentialsValid && passwordInput) passwordInput.focus();
+      if (loginCredentialsValid) {
+        // אם כבר בדקנו והפרטים טובים – שולחים את הטופס להתחברות בפועל
+        loginForm.submit();
+        return;
+      }
+      if (usernameInput && !usernameInput.value.trim()) {
+        usernameInput.focus();
+      } else if (passwordInput && !passwordInput.value) {
+        passwordInput.focus();
+      } else if (!loginCredentialsValid && passwordInput) {
+        passwordInput.focus();
+      }
     });
   }
   // כשהדף נטען עם שגיאת כניסה (לאחר שליחה) – לגלול לשגיאה

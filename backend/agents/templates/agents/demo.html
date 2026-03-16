@@ -9,7 +9,7 @@
         <strong>{{ m.created_at }}</strong> — {{ m.patient_name }} הותאם/ה עם {{ m.volunteer_name }} (ציון: {{ m.match_score }})
       </li>
     {% empty %}
-      <li style="padding:16px; color:#64748b; text-align:center;">אין עדיין התאמות. התאמות יופיעו אחרי שליחת בקשת נסיעה במצב AI.</li>
+      <li style="padding:16px; color:#64748b; text-align:center;">אין עדיין התאמות. התאמות יופיעו אחרי בקשות ופרסום נסיעות מתאימים.</li>
     {% endfor %}
   </ul>
 {% endblock %}

@@ -4,17 +4,24 @@
 {% block content %}
 <h1 class="page-title">מערכת הסעות</h1>
 {% if current_user.is_authenticated %}
-<!-- Buttons at top: Trivia and AI Mode side by side (orange) -->
+<!-- Buttons at top: Trivia and ride-publish side by side -->
 <div style="margin:12px 0; display:flex; flex-direction:row; flex-wrap:wrap; gap:10px; justify-content:center;">
   <a href="/trivia/" class="button" style="display:inline-block;">🎮 טריויה חכמה בזמן ההמתנה</a>
-  <a href="{% url 'ai_mode' %}" class="button" style="display:inline-block;">מצב AI</a>
+  <!-- כפתור שפותח את המודל הקיים ב-layout (ai-mode-modal) -->
+  <button type="button" id="ai-mode-launch" class="button" style="display:inline-block;">🚗 פרסום נסיעות</button>
 </div>
+<p style="text-align:center; margin-top:4px; color:#475569; font-weight:700;">
+  כאן מתנדב יכול לפרסם נסיעה עתידית, והמטופלים רואים אותה על המפה, מצטרפים, והמידע מתעדכן אצל המתנדב.
+</p>
 {% else %}
-<!-- Unauthenticated: Trivia and AI side by side -->
+<!-- Unauthenticated: Trivia and ride-publish side by side -->
 <div style="margin:12px 0; display:flex; flex-direction:row; flex-wrap:wrap; gap:10px; justify-content:center;">
   <button type="button" class="button trivia-require-login-btn" style="display:inline-block;">🎮 טריויה חכמה בזמן ההמתנה</button>
-  <a href="{% url 'login' %}" class="button" style="display:inline-block;">מצב AI</a>
+  <a href="{% url 'login' %}" class="button" style="display:inline-block;">🚗 פרסום נסיעות</a>
 </div>
+<p style="text-align:center; margin-top:4px; color:#475569; font-weight:700;">
+  אחרי כניסה, מתנדבים יוכלו לפרסם נסיעות עתידיות ומטופלים יוכלו לראות ולהצטרף אליהן במפה.
+</p>
 {% endif %}
 
 

@@ -1,0 +1,4 @@
+Operations to perform:
+  Apply all migrations: admin, agents, auth, contenttypes, sessions, stransport
+Running migrations:
+  No migrations to apply.
