@@ -13,9 +13,10 @@ ERRORS_LOG = getattr(settings, "ERRORS_LOG_PATH", os.path.join(settings.BASE_DIR
 LATEST_COUNT = 20
 
 def _cors_headers(response):
+    # allow the token header for authenticated error posts from Render or other collectors
     response["Access-Control-Allow-Origin"] = "*"
     response["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
-    response["Access-Control-Allow-Headers"] = "Content-Type"
+    response["Access-Control-Allow-Headers"] = "Content-Type, X-ERRORS-TOKEN"
     return response
 
 
@@ -26,6 +27,14 @@ def errors_api(request):
         r = JsonResponse({})
         return _cors_headers(r)
     try:
+        # optional shared secret token to protect the endpoint in production
+        ERRORS_TOKEN = getattr(settings, "ERRORS_TOKEN", "")
+        if ERRORS_TOKEN:
+            provided = request.headers.get("X-ERRORS-TOKEN") or request.POST.get("X-ERRORS-TOKEN")
+            if not provided or provided != ERRORS_TOKEN:
+                r = JsonResponse({"ok": False, "error": "Unauthorized"}, status=403)
+                return _cors_headers(r)
+
         data = json.loads(request.body or "{}")
         payload = {
             "message": data.get("message", ""),

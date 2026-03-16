@@ -19,6 +19,10 @@ LATEST_URL = f"{API_BASE}/api/errors/latest/"
 def fetch_latest_errors():
     try:
         req = urllib.request.Request(LATEST_URL, headers={"Accept": "application/json"})
+        # pass token header if set in environment
+        TOKEN = os.environ.get("ERRORS_TOKEN", "")
+        if TOKEN:
+            req.add_header("X-ERRORS-TOKEN", TOKEN)
         with urllib.request.urlopen(req, timeout=5) as resp:
             data = json.loads(resp.read().decode())
             return data.get("errors", [])
