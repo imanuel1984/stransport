@@ -24,3 +24,14 @@ Notes:
 - Client-side code already posts console errors to `/api/errors/` (see `stransport/static/stransport/stransport.js`).
 - Server-side middleware writes server errors to same `errors.log` (see `stransport/middleware.py`).
 
+Trigger (how to use with AI):
+- You don't need to paste logs. When you write messages like: "it doesn't work", "500", "do you see the error?", the AI should first read `errors.log` (or call the MCP tool `get_errors`) and respond based on the JSON.
+
+Quick local watcher (PowerShell):
+
+Run while Django is running:
+
+`powershell -ExecutionPolicy Bypass -File .\watch_errors.ps1`
+
+The watcher also appends to `errors_watch.log` in the project root.
+

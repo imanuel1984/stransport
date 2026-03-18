@@ -60,6 +60,7 @@
     </div>
   </div>
 
+
   <div style="margin-top:12px;">
     <button id="show-closed-btn" class="button">להראות בקשות מבוטלות/סגורות</button>
     <button id="show-open-btn" class="button" style="display:none;">חזרה לבקשות פתוחות</button>
@@ -73,6 +74,51 @@
 
 {% if current_user.profile.role == "volunteer" %}
 <div class="panel" id="volunteer-panel">
+  <div id="volunteer-offers-section" style="margin-bottom:12px;">
+    <h2 style="margin-bottom:4px;">הנסיעות שפרסמת</h2>
+    <div class="field-hint">כאן תראה את נסיעות המתנדב שפורסמו. ניתן לבטל פרסום לפני שמטופל הצטרף.</div>
+    <div id="volunteer-offers-container" style="margin-top:6px;"></div>
+  </div>
+  <div class="panel" id="vol-offer-wrap" style="margin-bottom:12px; display:none;">
+    <h2>פרסום נסיעה חדשה</h2>
+    <p class="field-hint">מלא את פרטי הנסיעה העתידית. הנסיעה תופיע למטופלים על המפה.</p>
+    <form id="volunteer-publish-form">
+      <div class="autocomplete-wrap" id="vol-offer-from-autocomplete"></div>
+      <input type="text" id="vol-offer-from" class="text-input" placeholder="מוצא (כתובת או אזור)" required>
+      <div class="field-hint">בחר כתובת מתוך ההצעות.</div>
+      <div class="field-error" id="vol-offer-from-error"></div>
+      <input type="hidden" id="vol-offer-from-lat">
+      <input type="hidden" id="vol-offer-from-lng">
+
+      <div class="autocomplete-wrap" id="vol-offer-to-autocomplete" style="margin-top:8px;"></div>
+      <input type="text" id="vol-offer-to" class="text-input" placeholder="יעד (כתובת או אזור)" required>
+      <div class="field-hint">בחר כתובת מתוך ההצעות.</div>
+      <div class="field-error" id="vol-offer-to-error"></div>
+      <input type="hidden" id="vol-offer-to-lat">
+      <input type="hidden" id="vol-offer-to-lng">
+
+      <div style="display:flex; gap:8px; margin-top:8px;">
+        <div style="flex:1;">
+          <label for="vol-offer-date">תאריך</label>
+          <input id="vol-offer-date" type="date" required>
+        </div>
+        <div style="flex:1;">
+          <label for="vol-offer-time">שעה</label>
+          <input id="vol-offer-time" type="time" required>
+        </div>
+      </div>
+
+      <label for="vol-offer-notes" style="margin-top:8px;">הערות (אופציונלי)</label>
+      <input id="vol-offer-notes" type="text" class="text-input" placeholder="למשל: יש מקום לשני מטופלים, עזרה בהליכה.">
+
+      <label for="vol-offer-phone" style="margin-top:8px;">טלפון (אופציונלי)</label>
+      <input id="vol-offer-phone" type="text" class="text-input" placeholder="טלפון ליצירת קשר">
+
+      <button type="submit" class="btn-primary" id="vol-offer-submit" style="margin-top:12px;">פרסם נסיעה</button>
+    </form>
+    <div class="field-error" id="vol-offer-error"></div>
+    <div id="vol-offer-success" style="display:none; margin-top:10px; padding:10px; background:#f0fdf4; border:1px solid #86efac; border-radius:8px; color:#166534;"></div>
+  </div>
   <div class="route-panel">
     <div class="route-panel-row">
       <label class="route-label" for="route-start-input">נקודת התחלה</label>

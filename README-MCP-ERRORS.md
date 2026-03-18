@@ -108,6 +108,24 @@ Restart or reload Cursor so it picks up the MCP server. The AI will then have ac
 
 ---
 
+## Trigger (how the AI knows to look)
+
+There is **no background streaming** into the chat by default. The trigger is **your message**.
+
+When you write anything that implies a problem (for example: *“it’s broken”, “500”, “error”, “doesn’t work”, “do you see the error?”*), the AI should automatically:
+
+1. Read `errors.log` (project root), or call the MCP tool `get_errors`
+2. Diagnose from the JSON fields (`message`, `stack`, `url`, `kind`, etc.)
+3. Propose a fix
+
+Optional local terminal watcher (PowerShell) to make issues obvious while you work:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\watch_errors.ps1
+```
+
+---
+
 ## Demo for stakeholders (e.g. employer)
 
 1. **Show the pipeline**  

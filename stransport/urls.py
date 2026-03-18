@@ -25,7 +25,11 @@ urlpatterns = [
     path("api/ai/offer/", views.ai_offer_api, name="ai_offer_api"),
     path("api/ai/request/", views.ai_request_api, name="ai_request_api"),
     path("api/ai/offers/", views.ai_offers_list_api, name="ai_offers_list_api"),
+    path("api/ai/my-offers/", views.ai_my_offers_api, name="ai_my_offers_api"),
+    path("api/ai/offer/<int:offer_id>/cancel/", views.ai_offer_cancel_api, name="ai_offer_cancel_api"),
+    path("api/ai/offers/<int:offer_id>/join/", views.ai_join_offer_api, name="ai_join_offer_api"),
     # Error tracking (frontend console errors)
     path("api/errors/", error_views.errors_api, name="errors_api"),
     path("api/errors/latest/", error_views.errors_latest_api, name="errors_latest_api"),
+    path("api/errors/clear/", error_views.errors_clear_api, name="errors_clear_api"),
 ]

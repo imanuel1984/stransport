@@ -45,6 +45,7 @@ def errors_api(request):
             "timestamp": data.get("timestamp", ""),
             "url": data.get("url", ""),
             "kind": data.get("kind", "client"),
+            "extra": data.get("extra") or {},
         }
         with open(ERRORS_LOG, "a", encoding="utf-8") as f:
             f.write(json.dumps(payload, ensure_ascii=False) + "\n")
@@ -77,4 +78,34 @@ def errors_latest_api(request):
         return _cors_headers(r)
     except Exception as e:
         r = JsonResponse({"errors": [], "error": str(e)}, status=500)
+        return _cors_headers(r)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def errors_clear_api(request):
+    """
+    Dev helper: clears errors.log so /api/errors/latest/ shows only new errors.
+    Only allowed when DEBUG=True and (optionally) token matches if configured.
+    """
+    try:
+        if not getattr(settings, "DEBUG", False):
+            r = JsonResponse({"ok": False, "error": "Not allowed"}, status=403)
+            return _cors_headers(r)
+
+        ERRORS_TOKEN = getattr(settings, "ERRORS_TOKEN", "")
+        if ERRORS_TOKEN:
+            provided = request.headers.get("X-ERRORS-TOKEN") or request.POST.get("X-ERRORS-TOKEN")
+            if not provided or provided != ERRORS_TOKEN:
+                r = JsonResponse({"ok": False, "error": "Unauthorized"}, status=403)
+                return _cors_headers(r)
+
+        # truncate file
+        os.makedirs(os.path.dirname(ERRORS_LOG), exist_ok=True)
+        with open(ERRORS_LOG, "w", encoding="utf-8") as f:
+            f.write("")
+        r = JsonResponse({"ok": True})
+        return _cors_headers(r)
+    except Exception as e:
+        r = JsonResponse({"ok": False, "error": str(e)}, status=500)
         return _cors_headers(r)

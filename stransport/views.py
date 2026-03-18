@@ -737,18 +737,26 @@ def volunteer_location_api(request, req_id):
             if not assignment:
                 return JsonResponse({"error": "not_assigned", "detail": "You are not assigned to this request"}, status=403)
             try:
-                data = json.loads(request.body.decode("utf-8") if request.body else "{}")
-            except (ValueError, UnicodeDecodeError):
+                raw = request.body
+                data = json.loads((raw.decode("utf-8") if raw else "{}"))
+            except (ValueError, UnicodeDecodeError, AttributeError):
                 return JsonResponse({"error": "Invalid JSON body"}, status=400)
             lat = parse_optional_float(data.get("lat"))
             lng = parse_optional_float(data.get("lng"))
             if lat is None or lng is None:
                 return JsonResponse({"error": "Invalid coordinates"}, status=400)
-            loc, _created = VolunteerLocation.objects.update_or_create(
-                assignment=assignment,
-                defaults={"lat": float(lat), "lng": float(lng)},
-            )
-            updated_at = loc.updated_at
+            try:
+                loc, _created = VolunteerLocation.objects.update_or_create(
+                    assignment=assignment,
+                    defaults={"lat": float(lat), "lng": float(lng)},
+                )
+            except Exception as e:
+                logger.exception("VolunteerLocation update_or_create failed (req_id=%s): %s", req_id, e)
+                return JsonResponse(
+                    {"error": "Server error saving location", "detail": str(e)},
+                    status=500,
+                )
+            updated_at = getattr(loc, "updated_at", None)
             return JsonResponse(
                 {
                     "success": True,
@@ -759,7 +767,8 @@ def volunteer_location_api(request, req_id):
             )
 
         # GET: patient side
-        if request.user.profile.role != "sick" or ride_request.sick_id != request.user.id:
+        profile = getattr(request.user, "profile", None)
+        if not profile or getattr(profile, "role", None) != "sick" or ride_request.sick_id != request.user.id:
             return JsonResponse({"error": "Only the owning patient can view location"}, status=403)
 
         # Show location only from 45 min before until 30 min after requested pickup time
@@ -793,7 +802,10 @@ def volunteer_location_api(request, req_id):
         raise
     except Exception as e:
         logger.exception("volunteer_location_api error (req_id=%s): %s", req_id, e)
-        return JsonResponse({"error": "Server error. Check server logs."}, status=500)
+        payload = {"error": "Server error. Check server logs."}
+        if getattr(settings, "DEBUG", False):
+            payload["detail"] = str(e)
+        return JsonResponse(payload, status=500)
 
 
 # --- API: ROUTE SUGGESTION ---
@@ -1268,23 +1280,37 @@ def ai_mode_page(request):
 @csrf_exempt
 @login_required_json
 def ai_offer_api(request):
-    """מתנדב שולח הצעת נסיעה (טקסט חופשי)."""
+    """מתנדב מפרסם נסיעה עתידית (טופס פרסום נסיעה)."""
     if request.method != "POST":
         return JsonResponse({"error": "Invalid request"}, status=400)
     try:
         if getattr(request.user.profile, "role", None) != "volunteer":
             return JsonResponse({"error": "רק מתנדבים יכולים לפרסם הצעת נסיעה"}, status=403)
         data = json.loads(request.body or "{}")
-        raw_text = (data.get("raw_text") or "").strip()
-        if not raw_text:
-            return JsonResponse({"error": "יש להזין תיאור הנסיעה"}, status=400)
-        ok, missing = validate_ai_ride_text(raw_text)
-        if not ok:
-            return JsonResponse({
-                "error": "נא לכלול בטקסט: " + ", ".join(missing) + ". לדוגמה: מחר ב-10:00 מתל אביב לחיפה.",
-            }, status=400)
-        offer = RideOffer.objects.create(volunteer=request.user, raw_text=raw_text, status="open")
-        return JsonResponse({"success": True, "id": offer.id, "message": "ההצעה נשמרה ומוצעת למטופלים."})
+        from_addr = (data.get("from") or "").strip()
+        to_addr = (data.get("to") or "").strip()
+        date = (data.get("date") or "").strip()
+        time = (data.get("time") or "").strip()
+        notes = (data.get("notes") or "").strip()
+        phone = (data.get("phone") or "").strip()
+
+        if not from_addr or not to_addr or not date or not time:
+            return JsonResponse({"error": "יש למלא מוצא, יעד, תאריך ושעה."}, status=400)
+
+        raw_text = (
+            f"נסיעה עתידית מ-{from_addr} אל {to_addr} בתאריך {date} בשעה {time}"
+            + (f" · הערות: {notes}" if notes else "")
+            + (f" · טלפון: {phone}" if phone else "")
+        )
+
+        offer = RideOffer.objects.create(
+            volunteer=request.user,
+            raw_text=raw_text,
+            status="open",
+            parsed_from=from_addr,
+            parsed_to=to_addr,
+        )
+        return JsonResponse({"success": True, "id": offer.id, "message": "הנסיעה פורסמה ומוצעת למטופלים."})
     except Exception as e:
         return JsonResponse({"error": str(e)}, status=500)
 
@@ -1297,16 +1323,151 @@ def ai_offers_list_api(request):
         return JsonResponse({"error": "Invalid request"}, status=400)
     try:
         offers = RideOffer.objects.filter(status="open").select_related("volunteer").order_by("-created_at")[:50]
-        data = [
-            {
+        data = []
+        for o in offers:
+            from_lat, from_lng = None, None
+            if o.parsed_from:
+                coords = geocode_address(o.parsed_from)
+                if coords:
+                    from_lat, from_lng = coords
+            data.append({
                 "id": o.id,
                 "raw_text": o.raw_text,
                 "volunteer_username": o.volunteer.username,
                 "created_at": o.created_at.isoformat(),
+                "parsed_from": o.parsed_from or "",
+                "parsed_to": o.parsed_to or "",
+                "from_lat": from_lat,
+                "from_lng": from_lng,
+            })
+        return JsonResponse({"offers": data})
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
+
+
+@csrf_exempt
+@login_required_json
+def ai_my_offers_api(request):
+    """
+    רשימת נסיעות שפורסמו ע"י המתנדב המחובר – להצגה בפאנל המתנדב.
+    """
+    if request.method != "GET":
+        return JsonResponse({"error": "Invalid request"}, status=400)
+    try:
+        profile = getattr(request.user, "profile", None)
+        if not profile or getattr(profile, "role", None) != "volunteer":
+            return JsonResponse({"offers": []})
+        offers = (
+            RideOffer.objects.filter(volunteer=request.user)
+            .order_by("-created_at")[:50]
+        )
+        data = [
+            {
+                "id": o.id,
+                "raw_text": o.raw_text,
+                "status": o.status,
+                "created_at": o.created_at.isoformat(),
+                "from": o.parsed_from or "",
+                "to": o.parsed_to or "",
             }
             for o in offers
         ]
         return JsonResponse({"offers": data})
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
+
+
+@csrf_exempt
+@login_required_json
+def ai_offer_cancel_api(request, offer_id):
+    """
+    ביטול פרסום נסיעה של מתנדב.
+    """
+    if request.method != "POST":
+        return JsonResponse({"error": "Invalid request"}, status=400)
+    try:
+        profile = getattr(request.user, "profile", None)
+        if not profile or getattr(profile, "role", None) != "volunteer":
+            return JsonResponse({"error": "רק מתנדב יכול לבטל פרסום נסיעה"}, status=403)
+        offer = get_object_or_404(RideOffer, id=offer_id, volunteer=request.user)
+        offer.status = "cancelled"
+        offer.save(update_fields=["status"])
+        return JsonResponse({"success": True})
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
+
+
+@csrf_exempt
+@login_required_json
+def ai_join_offer_api(request, offer_id):
+    """
+    מטופל לוחץ "הצטרפות לנסיעה" על הצעת נסיעה:
+    - יוצר בקשת נסיעה (TransportRequest) עבור המטופל
+    - מסמן את ההצעה כ"הותאם"
+    - יוצר שיוך למתנדב (TransportAssignment) כך שהנסיעה תופיע כמאושרת אצל המתנדב.
+    """
+    if request.method != "POST":
+        return JsonResponse({"error": "Invalid request"}, status=400)
+    try:
+        # רק מטופל יכול להצטרף
+        profile = getattr(request.user, "profile", None)
+        if not profile or getattr(profile, "role", None) != "sick":
+            return JsonResponse({"error": "רק מטופלים יכולים להצטרף לנסיעה"}, status=403)
+
+        offer = get_object_or_404(RideOffer, id=offer_id, status="open")
+
+        pickup = offer.parsed_from or "לא צוין מוצא"
+        destination = offer.parsed_to or "לא צוין יעד"
+
+        # זמן משוער – אם אין לנו שדות תאריך/שעה, קובעים שעה קדימה כברירת מחדל
+        when = timezone.now() + timedelta(hours=1)
+
+        pickup_lat = None
+        pickup_lng = None
+        dest_lat = None
+        dest_lng = None
+
+        # ננסה לגאוקד אם יש כתובות
+        if pickup and pickup != "לא צוין מוצא":
+            coords = geocode_address(pickup)
+            if coords:
+                pickup_lat, pickup_lng = coords
+        if destination and destination != "לא צוין יעד":
+            coords = geocode_address(destination)
+            if coords:
+                dest_lat, dest_lng = coords
+
+        ride_request = TransportRequest.objects.create(
+            sick=request.user,
+            pickup_address=pickup,
+            pickup_lat=pickup_lat,
+            pickup_lng=pickup_lng,
+            destination=destination,
+            dest_lat=dest_lat,
+            dest_lng=dest_lng,
+            requested_time=when,
+            notes=f"נוצר מהצטרפות לנסיעת מתנדב #{offer.id}: {offer.raw_text[:200]}",
+            status="accepted",
+        )
+
+        TransportAssignment.objects.create(
+            request=ride_request,
+            volunteer=offer.volunteer,
+        )
+
+        offer.status = "matched"
+        offer.save(update_fields=["status"])
+
+        broadcast_request_event("request_created", ride_request)
+        broadcast_request_event("request_accepted", ride_request)
+
+        return JsonResponse(
+            {
+                "success": True,
+                "request_id": ride_request.id,
+                "message": "הצטרפת לנסיעה. המתנדב רואה עכשיו את הנסיעה כמאושרת.",
+            }
+        )
     except Exception as e:
         return JsonResponse({"error": str(e)}, status=500)
 

@@ -1,65 +1,281 @@
 // Dummy connectRealtime to prevent ReferenceError if not defined elsewhere
 function connectRealtime() {}
-// AI Mode UI handlers
+// Stub so openOffersModal or any caller never hits "loadPublishedOffers is not defined" (e.g. cached script)
+if (typeof window !== 'undefined') window.loadPublishedOffers = function () {};
+// כפתור "פרסום נסיעות" בדף הבית:
+// * מתנדב – גלילה לפאנל שלו ופתיחת טופס פרסום (כמו שהיה)
+// * מטופל – מודל עם נסיעות שפורסמו
 document.addEventListener('DOMContentLoaded', function() {
   var aiLaunch = document.getElementById('ai-mode-launch');
   var aiModal = document.getElementById('ai-mode-modal');
   var aiCancel = document.getElementById('ai_cancel');
-  var aiSubmit = document.getElementById('ai_submit');
-  var aiError = document.getElementById('ai_error');
-  var aiSuccess = document.getElementById('ai_success');
+  var aiOffersContainer = document.getElementById('ai-offers-container');
+  var footerRideLink = document.getElementById('footer-ride-link');
+  // used below (avoid ReferenceError that breaks all JS)
+  var role = window.currentUserRole || '';
+  var volunteerOffersContainer = document.getElementById('volunteer-offers-container');
 
-  function showModal() {
-    if (aiModal) aiModal.style.display = 'block';
-    if (aiError) { aiError.style.display = 'none'; aiError.textContent = ''; }
-    if (aiSuccess) { aiSuccess.style.display = 'none'; aiSuccess.textContent = ''; }
+  function openOffersModal() {
+    if (!aiModal) return;
+    aiModal.style.display = 'block';
+    if (aiOffersContainer && !aiOffersContainer.dataset.loaded) {
+      // נטען כאן ישירות מהשרת כדי לא להיות תלויים בפונקציות אחרות
+      aiOffersContainer.innerHTML = '<div class="field-hint">טוען נסיעות שפורסמו...</div>';
+      fetch('/api/ai/offers/', { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+        .then(safeJson)
+        .then(function(json) {
+          if (json.__error || json.error) {
+            aiOffersContainer.innerHTML = '<div class="field-error">שגיאה בטעינת נסיעות שפורסמו.</div>';
+            return;
+          }
+          var offers = Array.isArray(json.offers) ? json.offers : [];
+          if (!offers.length) {
+            aiOffersContainer.innerHTML = '<div class="field-hint">אין כרגע נסיעות מתנדבים שפורסמו.</div>';
+            return;
+          }
+          var cardsHtml = offers.map(function(o) {
+            var text = o.raw_text || '';
+            var who = o.volunteer_username ? ('מתנדב: ' + o.volunteer_username) : '';
+            return (
+              '<div class="card" data-offer-id="' + o.id + '" style="margin-bottom:10px;padding:10px 12px;border-radius:10px;border:1px solid #e2e8f0;background:#f8fafc;box-shadow:0 1px 2px rgba(15,23,42,0.04);">' +
+                '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">' +
+                  '<div style="font-weight:700;color:#0f172a;font-size:0.98rem;">נסיעה מתנדב</div>' +
+                  '<button type="button" class="btn-primary" style="padding:4px 10px;font-size:0.85rem;border-radius:999px;border:none;background:#2563eb;color:#fff;cursor:pointer;" onclick="window.joinOffer && window.joinOffer(' + o.id + ')">הצטרפות לנסיעה</button>' +
+                '</div>' +
+                '<div style="margin-bottom:4px;color:#111827;font-size:0.95rem;">' + text + '</div>' +
+                '<div style="font-size:0.85rem;color:#6b7280;">' + who + '</div>' +
+              '</div>'
+            );
+          }).join('');
+          aiOffersContainer.innerHTML = cardsHtml;
+          aiOffersContainer.dataset.loaded = '1';
+        })
+        .catch(function() {
+          aiOffersContainer.innerHTML = '<div class="field-error">שגיאה ברשת בעת טעינת נסיעות שפורסמו.</div>';
+        });
+    }
   }
-  function hideModal() {
-    if (aiModal) aiModal.style.display = 'none';
+
+  function closeOffersModal() {
+    if (aiModal) {
+      aiModal.style.display = 'none';
+    }
   }
 
-  if (aiLaunch) aiLaunch.addEventListener('click', showModal);
-  if (aiCancel) aiCancel.addEventListener('click', hideModal);
+  function handleRidePublishClick(e) {
+    if (e) e.preventDefault();
+    var role = window.currentUserRole || '';
 
-  if (aiSubmit) aiSubmit.addEventListener('click', async function() {
-    var patient = document.getElementById('ai_patient_name').value.trim();
-    var pickup = document.getElementById('ai_pickup').value.trim();
-    var dest = document.getElementById('ai_destination').value.trim();
-    var date = document.getElementById('ai_date').value;
-    var time = document.getElementById('ai_time').value;
-
-    if (!pickup || !dest || !date || !time) {
-      if (aiError) { aiError.style.display = 'block'; aiError.textContent = 'יש למלא מקור, יעד, תאריך ושעה.'; }
+    // מתנדב: גלילה לפאנל ולפתוח את הטופס הפנימי
+    if (role === 'volunteer') {
+      var vPanel = document.getElementById('volunteer-panel');
+      var offerWrap = document.getElementById('vol-offer-wrap');
+      if (offerWrap) {
+        var isHidden = offerWrap.style.display === 'none' || !offerWrap.style.display;
+        offerWrap.style.display = isHidden ? 'block' : 'none';
+      }
+      if (vPanel) {
+        vPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
       return;
     }
 
-    var iso = new Date(date + 'T' + time).toISOString();
-
-    // POST to /api/request-ride
-    try {
-      const res = await fetch('/api/request-ride', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCookie('csrftoken') },
-        body: JSON.stringify({ patient_name: patient || 'מטופל', pickup_location: pickup, destination: dest, requested_time: iso })
-      });
-      const json = await safeJson(res);
-      if (!json.success) {
-        if (aiError) { aiError.style.display = 'block'; aiError.textContent = json.error || 'שגיאה ביצירת בקשה'; }
-        return;
+    // מטופל: מודל הצגת נסיעות שפורסמו
+    if (role === 'sick' && aiModal) {
+      var isOpen = aiModal.style.display === 'block';
+      if (isOpen) {
+        closeOffersModal();
+      } else {
+        openOffersModal();
       }
-      if (aiSuccess) { aiSuccess.style.display = 'block'; aiSuccess.textContent = 'הבקשה נשלחה בהצלחה'; }
-      setTimeout(hideModal, 1200);
-    } catch (err) {
-      if (aiError) { aiError.style.display = 'block'; aiError.textContent = 'שגיאה ברשת.'; }
+      return;
     }
-  });
-  // Show matches button (redirect to demo page)
+
+    // ברירת מחדל – גלילה לראש הדף
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  if (aiLaunch) {
+    aiLaunch.addEventListener('click', handleRidePublishClick);
+  }
+
+  if (footerRideLink) {
+    footerRideLink.addEventListener('click', handleRidePublishClick);
+  }
+
+  // אם זה מתנדב – נטען את הרשימה אחרי שהאתחול הראשי יגדיר את הפונקציה
+  if (role === 'volunteer' && volunteerOffersContainer) {
+    window.__needLoadVolunteerOffers = true;
+  }
+
+  if (aiCancel) {
+    aiCancel.addEventListener('click', function(e) {
+      e.preventDefault();
+      closeOffersModal();
+    });
+  }
+
+  // כפתור "הצג התאמות" (Agents demo)
   var showBtn = document.getElementById('show-agent-matches');
   if (showBtn) {
     showBtn.addEventListener('click', function() {
       window.location.href = '/agents/demo';
     });
   }
+
+  // הצטרפות לנסיעה שפורסמה – יוצר בקשה ומסמן אצל המתנדב כנסיעה מאושרת
+  if (typeof window !== 'undefined') {
+    window.joinOffer = async function(offerId) {
+      try {
+        const res = await fetch(`/api/ai/offers/${offerId}/join/`, {
+          method: 'POST',
+          headers: {
+            'X-CSRFToken': getCookie('csrftoken'),
+            'X-Requested-With': 'XMLHttpRequest',
+          },
+        });
+        const json = await safeJson(res);
+        if (json.__error || json.error) {
+          alert(json.error || 'שגיאה בהצטרפות לנסיעה.');
+          return;
+        }
+        // הסרת הכרטיס מהרשימה במודל, כדי שלא תופיע שוב למטופל
+        try {
+          const container = document.getElementById('ai-offers-container');
+          if (container) {
+            const card = container.querySelector('.card[data-offer-id="' + offerId + '"]');
+            if (card) {
+              card.remove();
+            }
+            if (!container.querySelector('.card')) {
+              container.innerHTML = '<div class="field-hint">אין כרגע נסיעות מתנדבים שפורסמו.</div>';
+            }
+          }
+        } catch (e) {
+          // אם יש בעיה ב־DOM לא מפילים את התהליך
+        }
+        alert(json.message || 'הצטרפת לנסיעה. ניתן לראות אותה ברשימת הבקשות שלך.');
+      } catch (e) {
+        alert('שגיאה ברשת בעת הצטרפות לנסיעה.');
+      }
+    };
+
+    window.cancelOffer = async function(offerId) {
+      if (!confirm('לבטל את פרסום הנסיעה הזו?')) return;
+      try {
+        const res = await fetch(`/api/ai/offer/${offerId}/cancel/`, {
+          method: 'POST',
+          headers: {
+            'X-CSRFToken': getCookie('csrftoken'),
+            'X-Requested-With': 'XMLHttpRequest',
+          },
+        });
+        const json = await safeJson(res);
+        if (json.__error || json.error) {
+          alert(json.error || 'שגיאה בביטול פרסום הנסיעה.');
+          return;
+        }
+        if (window.loadVolunteerOffers) {
+          window.loadVolunteerOffers();
+        }
+      } catch (e) {
+        alert('שגיאה ברשת בעת ביטול פרסום הנסיעה.');
+      }
+    };
+  }
+});
+
+// טופס פרסום נסיעה למתנדב בתוך volunteer-panel
+document.addEventListener('DOMContentLoaded', function() {
+  var form = document.getElementById('volunteer-publish-form');
+  if (!form) return;
+  var fromInput = document.getElementById('vol-offer-from');
+  var fromWrap = document.getElementById('vol-offer-from-autocomplete');
+  var fromLat = document.getElementById('vol-offer-from-lat');
+  var fromLng = document.getElementById('vol-offer-from-lng');
+  var fromErr = document.getElementById('vol-offer-from-error');
+
+  var toInput = document.getElementById('vol-offer-to');
+  var toWrap = document.getElementById('vol-offer-to-autocomplete');
+  var toLat = document.getElementById('vol-offer-to-lat');
+  var toLng = document.getElementById('vol-offer-to-lng');
+  var toErr = document.getElementById('vol-offer-to-error');
+
+  var dateEl = document.getElementById('vol-offer-date');
+  var timeEl = document.getElementById('vol-offer-time');
+  var notesEl = document.getElementById('vol-offer-notes');
+  var phoneEl = document.getElementById('vol-offer-phone');
+  var errorEl = document.getElementById('vol-offer-error');
+  var successEl = document.getElementById('vol-offer-success');
+  var submitBtn = document.getElementById('vol-offer-submit');
+
+  // Google Places מחובר דרך setupPlaces/placesRetry – לא מחברים כאן שוב
+
+  form.addEventListener('submit', function(e) {
+    e.preventDefault();
+    if (errorEl) errorEl.textContent = '';
+    if (successEl) { successEl.style.display = 'none'; successEl.textContent = ''; }
+
+    var from = (fromInput && fromInput.value || '').trim();
+    var to = (toInput && toInput.value || '').trim();
+    var date = dateEl && dateEl.value;
+    var time = timeEl && timeEl.value;
+    var notes = (notesEl && notesEl.value || '').trim();
+    var phone = (phoneEl && phoneEl.value || '').trim();
+
+    if (!from || !to || !date || !time) {
+      if (errorEl) errorEl.textContent = 'יש למלא מוצא, יעד, תאריך ושעה.';
+      return;
+    }
+
+    if (submitBtn) submitBtn.disabled = true;
+
+    fetch('/api/ai/offer/', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': getCookie('csrftoken'),
+      },
+      body: JSON.stringify({
+        from: from,
+        to: to,
+        date: date,
+        time: time,
+        notes: notes,
+        phone: phone,
+      }),
+    })
+      .then(safeJson)
+      .then(function(json) {
+        if (json.__error || json.error) {
+          if (errorEl) errorEl.textContent = json.error || 'שגיאה בפרסום הנסיעה.';
+          return;
+        }
+        if (successEl) {
+          successEl.textContent = json.message || 'הנסיעה פורסמה בהצלחה.';
+          successEl.style.display = 'block';
+        }
+        // ניקוי השדות
+        if (fromInput) fromInput.value = '';
+        if (toInput) toInput.value = '';
+        if (dateEl) dateEl.value = '';
+        if (timeEl) timeEl.value = '';
+        if (notesEl) notesEl.value = '';
+        if (phoneEl) phoneEl.value = '';
+        // רענון רשימת "הנסיעות שפרסמת" למעלה אצל המתנדב
+        try {
+          if (window.loadVolunteerOffers) {
+            window.loadVolunteerOffers();
+          }
+        } catch (e) {}
+      })
+      .catch(function() {
+        if (errorEl) errorEl.textContent = 'שגיאה ברשת בעת פרסום הנסיעה.';
+      })
+      .finally(function() {
+        if (submitBtn) submitBtn.disabled = false;
+      });
+  });
 });
 // Suggest route for selected requests
 async function suggestRoute() {
@@ -381,22 +597,56 @@ function applyIsraelRestriction(element) {
     // Ignore attribute errors for older builds.
   }
 
-// --- Error tracker: שולח שגיאות קונסול/טריוויה לשרת (errors.log) ---
+// --- Error tracker: שולח שגיאות דפדפן לשרת (errors.log) ---
 (function initErrorTracker() {
   try {
     const originalError = window.console && window.console.error ? window.console.error.bind(window.console) : null;
+    const originalWarn = window.console && window.console.warn ? window.console.warn.bind(window.console) : null;
+
+    const sent = new Map(); // key -> lastSentMs
+    function shouldSend(key) {
+      const now = Date.now();
+      const last = sent.get(key) || 0;
+      if (now - last < 3000) return false; // debounce duplicates
+      sent.set(key, now);
+      return true;
+    }
+
+    function baseExtra() {
+      return {
+        user_id: window.currentUserId || '',
+        username: window.currentUserUsername || '',
+        role: window.currentUserRole || '',
+        user_agent: navigator.userAgent,
+        path: window.location.pathname,
+        href: window.location.href,
+      };
+    }
 
     function sendError(payload) {
       try {
+        const body = JSON.stringify({
+          ...payload,
+          url: window.location.href,
+          timestamp: new Date().toISOString(),
+          kind: "client",
+          extra: {
+            ...baseExtra(),
+            ...(payload.extra || {}),
+          },
+        });
+
+        // Prefer sendBeacon for reliability (on unload)
+        if (navigator.sendBeacon) {
+          const ok = navigator.sendBeacon("/api/errors/", new Blob([body], { type: "application/json" }));
+          if (ok) return;
+        }
+
         fetch("/api/errors/", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            ...payload,
-            url: window.location.href,
-            timestamp: new Date().toISOString(),
-            kind: "client",
-          }),
+          body,
+          keepalive: true,
         }).catch(() => {});
       } catch (_e) {
         // ignore
@@ -407,32 +657,50 @@ function applyIsraelRestriction(element) {
       try {
         const message = event.message || String(event.error || "");
         const stack = event.error && event.error.stack ? String(event.error.stack) : "";
-        sendError({
-          message,
-          stack,
-          source: event.filename || "",
-          line: event.lineno,
-          column: event.colno,
-        });
-      } catch (_e) {
-        // ignore
-      }
+        const source = event.filename || "";
+        const line = event.lineno;
+        const column = event.colno;
+        const key = `error:${message}:${source}:${line}:${column}`;
+        if (!shouldSend(key)) return;
+        sendError({ message, stack, source, line, column });
+      } catch (_e) {}
+    });
+
+    window.addEventListener("unhandledrejection", function (event) {
+      try {
+        const reason = event && event.reason;
+        const message = reason && reason.message ? String(reason.message) : String(reason || "Unhandled promise rejection");
+        const stack = reason && reason.stack ? String(reason.stack) : "";
+        const key = `rejection:${message}`;
+        if (!shouldSend(key)) return;
+        sendError({ message, stack, source: "unhandledrejection" });
+      } catch (_e) {}
     });
 
     window.console.error = function (...args) {
       try {
-        const message = args.map(String).join(" ");
-        sendError({ message, stack: "", source: "console.error" });
-      } catch (_e) {
-        // ignore
-      }
-      if (originalError) {
-        originalError(...args);
-      }
+        const message = args.map(a => (a instanceof Error ? (a.message || String(a)) : String(a))).join(" ");
+        const key = `console.error:${message}`;
+        if (shouldSend(key)) {
+          const err = args.find(a => a instanceof Error);
+          sendError({ message, stack: err && err.stack ? String(err.stack) : "", source: "console.error" });
+        }
+      } catch (_e) {}
+      if (originalError) originalError(...args);
     };
-  } catch (_e) {
-    // ignore any init failure
-  }
+
+    // Optional: warn helps catch “role is not defined” precursors
+    window.console.warn = function (...args) {
+      try {
+        const message = args.map(String).join(" ");
+        const key = `console.warn:${message}`;
+        if (shouldSend(key)) {
+          sendError({ message, stack: "", source: "console.warn" });
+        }
+      } catch (_e) {}
+      if (originalWarn) originalWarn(...args);
+    };
+  } catch (_e) {}
 })();
 }
 
@@ -735,6 +1003,7 @@ function runAppInit() {
   const requestsContainer = document.getElementById('requests-container');
   const closedContainer = document.getElementById('closed-requests-container');
   const acceptedContainer = document.getElementById('accepted-requests-container');
+  const volunteerOffersContainer = document.getElementById('volunteer-offers-container');
   const createForm = document.getElementById('create-request-form');
   const showClosedBtn = document.getElementById('show-closed-btn');
   const showAcceptedBtn = document.getElementById('show-accepted-btn');
@@ -759,7 +1028,9 @@ function runAppInit() {
   // זה הבאדום
   let map = null;
   let markersLayer = null;
+  let offersLayer = null;
   let patientMap = null;
+  let patientOffersLayer = null;
   let patientPickupMarker = null;
   let patientDestMarker = null;
   let patientVolunteerMarker = null;
@@ -821,6 +1092,19 @@ function runAppInit() {
   const editTimeError = document.getElementById('edit-time-error');
   const editSubmitBtn = document.getElementById('edit-submit-btn');
 
+  // שדות טופס פרסום נסיעה למתנדב
+  const volOfferFromInput = document.getElementById('vol-offer-from');
+  const volOfferFromAutocomplete = document.getElementById('vol-offer-from-autocomplete');
+  const volOfferFromLat = document.getElementById('vol-offer-from-lat');
+  const volOfferFromLng = document.getElementById('vol-offer-from-lng');
+  const volOfferFromError = document.getElementById('vol-offer-from-error');
+
+  const volOfferToInput = document.getElementById('vol-offer-to');
+  const volOfferToAutocomplete = document.getElementById('vol-offer-to-autocomplete');
+  const volOfferToLat = document.getElementById('vol-offer-to-lat');
+  const volOfferToLng = document.getElementById('vol-offer-to-lng');
+  const volOfferToError = document.getElementById('vol-offer-to-error');
+
   const createState = {
     pickupValid: false,
     destinationValid: false,
@@ -833,6 +1117,101 @@ function runAppInit() {
     destinationValid: false,
     timeValid: true,
   };
+
+  async function loadVolunteerOffers() {
+    if (!volunteerOffersContainer) return;
+    volunteerOffersContainer.innerHTML = '<div class="field-hint">טוען נסיעות שפרסמת...</div>';
+    try {
+      const res = await fetch('/api/ai/my-offers/', {
+        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+      });
+      const json = await safeJson(res);
+      if (json.__error || json.error) {
+        volunteerOffersContainer.innerHTML = '<div class="field-error">שגיאה בטעינת נסיעות שפרסמת.</div>';
+        return;
+      }
+      const offers = Array.isArray(json.offers) ? json.offers : [];
+      if (!offers.length) {
+        volunteerOffersContainer.innerHTML = '<div class="field-hint">עדיין לא פרסמת נסיעות.</div>';
+        return;
+      }
+      const cards = offers.map(function(o) {
+        const statusLabel = o.status === 'open'
+          ? 'פתוחה למטופלים'
+          : (o.status === 'matched' ? 'יש מטופל שהצטרף' : 'בוטלה');
+        const canCancel = o.status === 'open';
+        const sub = (o.from && o.to)
+          ? ('מ־' + o.from + ' אל ' + o.to)
+          : (o.raw_text || '');
+        return (
+          '<div class="card" data-my-offer-id="' + o.id + '" style="margin-bottom:8px;padding:8px 10px;border-radius:8px;border:1px solid #e5e7eb;background:#f9fafb;">' +
+            '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">' +
+              '<div style="font-weight:600;color:#0f172a;font-size:0.95rem;">נסיעה #' + o.id + '</div>' +
+              '<div style="font-size:0.8rem;color:#6b7280;">' + statusLabel + '</div>' +
+            '</div>' +
+            '<div style="margin-bottom:4px;color:#111827;font-size:0.9rem;">' + sub + '</div>' +
+            (canCancel
+              ? '<button type="button" class="button" style="padding:3px 8px;font-size:0.8rem;border-radius:999px;" onclick="window.cancelOffer && window.cancelOffer(' + o.id + ')">ביטול פרסום</button>'
+              : ''
+            ) +
+          '</div>'
+        );
+      }).join('');
+      volunteerOffersContainer.innerHTML = cards;
+    } catch (e) {
+      volunteerOffersContainer.innerHTML = '<div class="field-error">שגיאה ברשת בעת טעינת נסיעות שפרסמת.</div>';
+    }
+  }
+
+  // לחשוף גלובלית כדי שנוכל לרענן אחרי פרסום/ביטול (וגם כשהעמוד עולה)
+  if (typeof window !== 'undefined') {
+    window.loadVolunteerOffers = loadVolunteerOffers;
+    if (window.__needLoadVolunteerOffers) {
+      window.__needLoadVolunteerOffers = false;
+      loadVolunteerOffers();
+    }
+  }
+
+  async function loadPublishedOffers(target) {
+    const container = target || publishedOffersContainer;
+    if (!container) return;
+    container.innerHTML = '<div class="field-hint">טוען נסיעות שפורסמו...</div>';
+    try {
+      const res = await fetch('/api/ai/offers/', {
+        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+      });
+      const json = await safeJson(res);
+      if (json.__error || json.error) {
+        container.innerHTML = '<div class="field-error">שגיאה בטעינת נסיעות שפורסמו.</div>';
+        return;
+      }
+      const offers = Array.isArray(json.offers) ? json.offers : [];
+      if (!offers.length) {
+        container.innerHTML = '<div class="field-hint">אין כרגע נסיעות מתנדבים שפורסמו.</div>';
+        return;
+      }
+      const cardsHtml = offers.map(o => {
+        const text = o.raw_text || '';
+        const who = o.volunteer_username ? `מתנדב: ${o.volunteer_username}` : '';
+        return `
+          <div class="card" style="margin-bottom:8px;padding:8px;border-radius:8px;border:1px solid #e5e7eb;background:#f9fafb;">
+            <div style="font-weight:600;margin-bottom:4px;">${text}</div>
+            <div style="font-size:0.9em;color:#6b7280;">${who}</div>
+          </div>
+        `;
+      }).join('');
+      container.innerHTML = cardsHtml;
+      container.dataset.loaded = '1';
+    } catch (e) {
+      console.error('loadPublishedOffers error', e);
+      container.innerHTML = '<div class="field-error">שגיאה ברשת בעת טעינת נסיעות שפורסמו.</div>';
+    }
+  }
+
+  // לחשוף לפונקציות למעלה (כפתור המודל בדף הבית)
+  if (typeof window !== 'undefined') {
+    window.loadPublishedOffers = loadPublishedOffers;
+  }
 
   function isDateTimeInPast(val) {
     if (!val || typeof val !== 'string') return false;
@@ -978,6 +1357,7 @@ function hidePanel(el) {
 
   initPatientMap();
   updatePatientMap();
+  if (patientMap && patientOffersLayer) loadOfferMarkers(patientMap, patientOffersLayer);
   setupPatientLiveLocation();
   schedulePatientLiveLocationCheck();
 
@@ -1396,6 +1776,37 @@ function hidePanel(el) {
       setFieldError(editDestinationError, '');
       updateEditSubmitState();
     });
+
+    // פרסום נסיעה למתנדב: מוצא/יעד עם גוגל, כמו בטופס בקשה
+    attachPlacesAutocomplete(volOfferFromInput, volOfferFromAutocomplete, place => {
+      if (!place) {
+        if (volOfferFromLat) volOfferFromLat.value = '';
+        if (volOfferFromLng) volOfferFromLng.value = '';
+        setFieldError(volOfferFromError, 'בחר כתובת מהמוצעות.');
+        return;
+      }
+      volOfferFromInput.value = place.address;
+      if (typeof place.lat === 'number' && typeof place.lng === 'number') {
+        if (volOfferFromLat) volOfferFromLat.value = place.lat;
+        if (volOfferFromLng) volOfferFromLng.value = place.lng;
+        setFieldError(volOfferFromError, '');
+      }
+    });
+
+    attachPlacesAutocomplete(volOfferToInput, volOfferToAutocomplete, place => {
+      if (!place) {
+        if (volOfferToLat) volOfferToLat.value = '';
+        if (volOfferToLng) volOfferToLng.value = '';
+        setFieldError(volOfferToError, 'בחר כתובת מהמוצעות.');
+        return;
+      }
+      volOfferToInput.value = place.address;
+      if (typeof place.lat === 'number' && typeof place.lng === 'number') {
+        if (volOfferToLat) volOfferToLat.value = place.lat;
+        if (volOfferToLng) volOfferToLng.value = place.lng;
+        setFieldError(volOfferToError, '');
+      }
+    });
   }
 
   function initMap() {
@@ -1420,12 +1831,14 @@ function hidePanel(el) {
       iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-2x.png',
       shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png'
     });
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '&copy; OpenStreetMap contributors',
-      maxZoom: 18,
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
+      subdomains: 'abcd',
+      maxZoom: 20,
     }).addTo(map);
 
     markersLayer = L.layerGroup().addTo(map);
+    offersLayer = L.layerGroup().addTo(map);
     setTimeout(() => {
       if (map) map.invalidateSize();
     }, 300);
@@ -1453,10 +1866,12 @@ function hidePanel(el) {
       iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-2x.png',
       shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png'
     });
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '&copy; OpenStreetMap contributors',
-      maxZoom: 18,
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
+      subdomains: 'abcd',
+      maxZoom: 20,
     }).addTo(patientMap);
+    patientOffersLayer = L.layerGroup().addTo(patientMap);
     setTimeout(() => {
       if (patientMap) patientMap.invalidateSize();
     }, 300);
@@ -2007,6 +2422,35 @@ function hidePanel(el) {
     }
   }
 
+  async function loadOfferMarkers(targetMap, targetLayer) {
+    if (!targetMap || !targetLayer) return;
+    try {
+      const res = await fetch('/api/ai/offers/', { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+      const json = await safeJson(res);
+      if (json.__error || json.error) return;
+      const offers = Array.isArray(json.offers) ? json.offers : [];
+      targetLayer.clearLayers();
+      offers.forEach(function(o) {
+        const lat = Number(o.from_lat);
+        const lng = Number(o.from_lng);
+        if (!Number.isFinite(lat) || !Number.isFinite(lng) || !isInsideIsrael(lat, lng)) return;
+        const marker = L.circleMarker([lat, lng], {
+          radius: 10,
+          fillColor: '#22c55e',
+          color: '#15803d',
+          weight: 2,
+          fillOpacity: 0.9,
+        });
+        const who = o.volunteer_username ? 'מתנדב: ' + o.volunteer_username : '';
+        const text = (o.raw_text || '').substring(0, 120);
+        marker.bindPopup('<strong>נסיעה מתנדב</strong><br>' + who + '<br>' + (o.parsed_from || '') + ' → ' + (o.parsed_to || '') + '<br>' + text);
+        marker.addTo(targetLayer);
+      });
+    } catch (e) {
+      if (typeof console !== 'undefined' && console.warn) console.warn('loadOfferMarkers', e);
+    }
+  }
+
   async function loadOpenRequests() {
     if (!requestsContainer) return;
     try {
@@ -2032,6 +2476,10 @@ function hidePanel(el) {
 
       if (reqs.length === 0) {
         requestsContainer.innerHTML = '<p class="no-requests">אין בקשות פתוחות.</p>';
+        if (role === 'volunteer') {
+          updateMapMarkers([]);
+          if (map && offersLayer) loadOfferMarkers(map, offersLayer);
+        }
         return;
       }
 
@@ -2161,6 +2609,7 @@ function hidePanel(el) {
 
       if (role === 'volunteer') {
         updateMapMarkers(reqs);
+        if (map && offersLayer) loadOfferMarkers(map, offersLayer);
       }
 
     } catch (err) {
