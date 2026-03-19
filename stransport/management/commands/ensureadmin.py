@@ -25,6 +25,12 @@ class Command(BaseCommand):
                 if not getattr(u, "profile", None):
                     Profile.objects.get_or_create(user=u, defaults={"role": "volunteer"})
                     self.stdout.write(self.style.SUCCESS("נוסף Profile לאדמין."))
+                # If ADMIN_PASSWORD is provided, ensure the admin password matches the current env.
+                # This fixes the common case where the user already exists from a previous deploy.
+                if password:
+                    u.set_password(password)
+                    u.save(update_fields=["password"])
+                    self.stdout.write(self.style.SUCCESS("עודכנה סיסמת האדמין לפי ADMIN_PASSWORD."))
             except Exception as e:
                 logger.warning("ensureadmin profile check: %s", e)
             return
