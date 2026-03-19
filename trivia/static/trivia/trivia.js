@@ -67,6 +67,10 @@ document.addEventListener("DOMContentLoaded", () => {
   loadTopics();
 });
 
+// Guest mode: read-only; block "hint" semantics and send to AI as regular chat.
+const __triviaParams = new URLSearchParams(window.location.search);
+const __isGuestTrivia = (__triviaParams.get("guest") === "1");
+
 /* =====================
    Load Topics
 ===================== */
@@ -250,6 +254,8 @@ function renderQuestion() {
     </div>
   `;
 
+  // Guest mode: "hint" behaves like AI help, but keep the UI label as-is.
+
   // build answers safely (textContent to avoid <class 'int'> disappearing)
   const answersDiv = document.getElementById("answers");
   q.choices.forEach((c, i) => {
@@ -285,6 +291,23 @@ function renderQuestion() {
       }
     });
   }
+
+  // Guest demo: block ANY AI/Groq actions from both buttons.
+  if (__isGuestTrivia) {
+    if (hintBtn) {
+      hintBtn.disabled = true;
+      hintBtn.title = "דמו אורח: אין אפשרות לרמז / AI";
+    }
+    if (explainBtn) {
+      explainBtn.disabled = true;
+      explainBtn.title = "דמו אורח: אין אפשרות להסבר / AI";
+    }
+    if (chatSend) chatSend.disabled = true;
+    if (chatInput) {
+      chatInput.disabled = true;
+      chatInput.placeholder = "דמו אורח: אין אפשרות לשלוח ל-AI";
+    }
+  }
 }
 
 /* =====================
@@ -317,7 +340,7 @@ function selectAnswer(i) {
 
   const explainBtn = document.getElementById("explainBtn");
   const nextBtn = document.getElementById("nextBtn");
-  if (explainBtn) explainBtn.disabled = false;
+  if (explainBtn) explainBtn.disabled = __isGuestTrivia ? true : false;
   if (nextBtn) nextBtn.disabled = false;
 }
 
@@ -325,11 +348,17 @@ function selectAnswer(i) {
    AI: Hint / Explain
 ===================== */
 async function askHint() {
+  if (__isGuestTrivia) {
+    const box = document.getElementById("aiBox");
+    if (box) box.textContent = "דמו אורח: אין אפשרות להשתמש ב-AI.";
+    return;
+  }
+
   usedHelp = true; // ✅ any hint counts as help
 
   const box = document.getElementById("aiBox");
   if (!box) return;
-  box.textContent = "טוען רמז...";
+  box.textContent = __isGuestTrivia ? "טוען עזרה (AI)..." : "טוען רמז...";
 
   try {
     const q = questions[index];
@@ -341,9 +370,11 @@ async function askHint() {
       },
       body: JSON.stringify({
         question: q,
-        userMessage: "תן רמז בלי לגלות תשובה",
+        userMessage: __isGuestTrivia
+          ? "עזור לי לפתור בלי לגלות את התשובה."
+          : "תן רמז בלי לגלות תשובה",
         history: [],
-        isHint: true  // ✅ מזהה בקשת רמז
+        isHint: __isGuestTrivia ? false : true  // Guest: treat as regular chat
       }),
     });
 
@@ -371,6 +402,11 @@ async function askHint() {
 }
 
 async function askExplain() {
+  if (__isGuestTrivia) {
+    const box = document.getElementById("aiBox");
+    if (box) box.textContent = "דמו אורח: אין אפשרות להשתמש ב-AI להסבר.";
+    return;
+  }
   usedHelp = true; // ✅ explain counts as help
 
   const box = document.getElementById("aiBox");
@@ -438,6 +474,11 @@ async function sendChatMessage() {
   const chatInput = document.getElementById("chatInput");
   const msg = (chatInput?.value || "").trim();
   if (!msg) return;
+
+  if (__isGuestTrivia) {
+    appendBubble("ai", "דמו אורח: אין אפשרות להשתמש ב-AI.");
+    return;
+  }
 
   if (!currentQuestion) {
     appendBubble("ai", "בחר נושא והתחל משחק כדי לשאול על שאלה.");

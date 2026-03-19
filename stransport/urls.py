@@ -1,5 +1,5 @@
 from django.urls import path
-from . import views, error_views
+from . import views, error_views, debug_views
 from .views import FaviconView
 
 urlpatterns = [
@@ -21,15 +21,22 @@ urlpatterns = [
     path("api/requests/location/<int:req_id>/", views.volunteer_location_api, name="volunteer_location_api"),
     path("api/route/suggest/", views.suggest_route_api, name="suggest_route_api"),
     path("api/route/links/", views.route_links_api, name="route_links_api"),
-    path("post/", views.ai_mode_page, name="ai_mode"),
+    path("guest/", views.guest_home, name="guest_home"),
     path("api/ai/offer/", views.ai_offer_api, name="ai_offer_api"),
     path("api/ai/request/", views.ai_request_api, name="ai_request_api"),
+    path("api/ai/grok/chat/", views.ai_grok_chat_api, name="ai_grok_chat_api"),
+    path("api/ai/grok/volunteer/", views.ai_grok_volunteer_chat_api, name="ai_grok_volunteer_chat_api"),
     path("api/ai/offers/", views.ai_offers_list_api, name="ai_offers_list_api"),
     path("api/ai/my-offers/", views.ai_my_offers_api, name="ai_my_offers_api"),
+    path("api/ai/auto-suggestions/", views.ai_auto_suggestions_api, name="ai_auto_suggestions_api"),
     path("api/ai/offer/<int:offer_id>/cancel/", views.ai_offer_cancel_api, name="ai_offer_cancel_api"),
     path("api/ai/offers/<int:offer_id>/join/", views.ai_join_offer_api, name="ai_join_offer_api"),
     # Error tracking (frontend console errors)
     path("api/errors/", error_views.errors_api, name="errors_api"),
     path("api/errors/latest/", error_views.errors_latest_api, name="errors_latest_api"),
     path("api/errors/clear/", error_views.errors_clear_api, name="errors_clear_api"),
+
+    # Debug automation (token-protected, DEBUG only)
+    path("api/debug/health/", debug_views.debug_health, name="debug_health"),
+    path("api/debug/requests/location/<int:req_id>/", debug_views.debug_request_location, name="debug_request_location"),
 ]

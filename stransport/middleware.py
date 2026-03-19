@@ -43,6 +43,19 @@ def ErrorsLogMiddleware(get_response):
             raise
 
         if response.status_code >= 500:
+            # Try to capture response body for handled exceptions (many views return JsonResponse(status=500))
+            body_preview = ""
+            try:
+                content = getattr(response, "content", b"") or b""
+                if isinstance(content, bytes):
+                    body_preview = content.decode("utf-8", errors="replace")
+                else:
+                    body_preview = str(content)
+                body_preview = body_preview.strip()
+                if len(body_preview) > 2000:
+                    body_preview = body_preview[:2000] + "…"
+            except Exception:
+                body_preview = ""
             _append_error(
                 {
                     "kind": "server",
@@ -51,6 +64,11 @@ def ErrorsLogMiddleware(get_response):
                     "url": request.build_absolute_uri() if hasattr(request, "build_absolute_uri") else "",
                     "method": request.method,
                     "path": request.path,
+                    "extra": {
+                        "response_body": body_preview,
+                        "user_id": getattr(getattr(request, "user", None), "id", None),
+                        "username": getattr(getattr(request, "user", None), "username", ""),
+                    },
                 }
             )
 

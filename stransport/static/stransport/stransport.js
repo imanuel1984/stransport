@@ -10,10 +10,420 @@ document.addEventListener('DOMContentLoaded', function() {
   var aiModal = document.getElementById('ai-mode-modal');
   var aiCancel = document.getElementById('ai_cancel');
   var aiOffersContainer = document.getElementById('ai-offers-container');
-  var footerRideLink = document.getElementById('footer-ride-link');
   // used below (avoid ReferenceError that breaks all JS)
   var role = window.currentUserRole || '';
-  var volunteerOffersContainer = document.getElementById('volunteer-offers-container');
+  var publishBtnDefaultText = (aiLaunch && aiLaunch.textContent ? aiLaunch.textContent : 'פרסם נסיעה').trim();
+
+  // AI Agent modal (patient only)
+  var aiAgentLaunch = document.getElementById('ai-agent-launch');
+  var aiAgentLaunchFooter = document.getElementById('ai-agent-launch-footer');
+  var aiAgentModal = document.getElementById('ai-agent-modal');
+  var aiAgentClose = document.getElementById('ai-agent-close');
+  var aiAgentSend = document.getElementById('ai-agent-send');
+  var aiAgentInput = document.getElementById('ai-agent-input');
+  var aiAgentResults = document.getElementById('ai-agent-results');
+  var aiAgentError = document.getElementById('ai-agent-error');
+
+  // AI Agent modal (volunteer)
+  var aiVolAgentLaunch = document.getElementById('ai-vol-agent-launch');
+  var aiVolAgentLaunchFooter = document.getElementById('ai-vol-agent-launch-footer');
+  var aiVolAgentModal = document.getElementById('ai-vol-agent-modal');
+  var aiVolAgentClose = document.getElementById('ai-vol-agent-close');
+  var aiVolAgentSend = document.getElementById('ai-vol-agent-send');
+  var aiVolAgentInput = document.getElementById('ai-vol-agent-input');
+  var aiVolAgentResults = document.getElementById('ai-vol-agent-results');
+  var aiVolAgentError = document.getElementById('ai-vol-agent-error');
+
+  function openAiAgentModal() {
+    if (!aiAgentModal) return;
+    aiAgentModal.style.display = 'block';
+    if (aiAgentError) aiAgentError.textContent = '';
+    if (aiAgentResults) aiAgentResults.innerHTML = '';
+
+    // show initial assistant message immediately (no typing required)
+    if (aiAgentHistory && !aiAgentHistory.length) {
+      aiAgentHistory.push({ role: 'assistant', content: 'היי, ספר מה אתה צריך (מוצא, יעד, תאריך/שעה). אם חסר משהו אשאל.' });
+      if (aiAgentResults) {
+        appendAiAgentBubble('assistant', aiAgentHistory[0].content);
+      }
+    }
+
+    if (aiAgentInput) aiAgentInput.focus();
+  }
+
+  function closeAiAgentModal() {
+    if (!aiAgentModal) return;
+    aiAgentModal.style.display = 'none';
+  }
+
+  function appendAiAgentBubble(role, text) {
+    if (!aiAgentResults) return;
+    const safe = String(text || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    const align = role === 'user' ? 'flex-start' : 'flex-end';
+    const bg = role === 'user' ? '#f1f5f9' : '#dbeafe';
+    const color = '#0f172a';
+    const wrap = document.createElement('div');
+    wrap.style.display = 'flex';
+    wrap.style.justifyContent = align;
+    wrap.style.marginTop = '8px';
+    wrap.innerHTML = `<div style="max-width:85%; padding:10px 12px; border-radius:14px; background:${bg}; color:${color}; border:1px solid #e2e8f0; white-space:pre-wrap;">${safe}</div>`;
+    aiAgentResults.appendChild(wrap);
+    aiAgentResults.scrollTop = aiAgentResults.scrollHeight;
+  }
+
+  function renderAiAgentMatches(matches) {
+    if (!aiAgentResults) return;
+    if (!matches || !matches.length) return;
+    const title = document.createElement('div');
+    title.style.cssText = 'margin-top:10px;font-weight:900;color:#0f172a;';
+    title.textContent = 'התאמות אפשריות:';
+    aiAgentResults.appendChild(title);
+    matches.forEach(function(m) {
+      const text = (m.raw_text || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      const who = m.volunteer_username ? ('מתנדב: ' + m.volunteer_username) : '';
+      const joinBtnHtml = window.guestMode
+        ? '<button type="button" class="btn-primary" style="padding:4px 10px;font-size:0.85rem;border-radius:999px;border:none;background:#2563eb;color:#fff;opacity:0.6;cursor:not-allowed;" disabled>הצטרף</button>'
+        : '<button type="button" class="btn-primary" style="padding:4px 10px;font-size:0.85rem;border-radius:999px;border:none;background:#2563eb;color:#fff;cursor:pointer;" onclick="window.joinOffer && window.joinOffer(' + m.id + ', this)">הצטרף</button>';
+      const card = document.createElement('div');
+      card.className = 'card';
+      card.style.cssText = 'margin-top:8px;padding:10px 12px;border-radius:10px;border:1px solid #e2e8f0;background:#f8fafc;box-shadow:0 1px 2px rgba(15,23,42,0.04);';
+      card.innerHTML =
+        '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px;">' +
+          '<div style="font-weight:900;color:#0f172a;">נסיעה מתנדב</div>' +
+          joinBtnHtml +
+        '</div>' +
+        '<div style="color:#111827;">' + text + '</div>' +
+        (who ? '<div style="margin-top:6px;font-size:0.85rem;color:#6b7280;">' + who + '</div>' : '');
+      aiAgentResults.appendChild(card);
+    });
+    aiAgentResults.scrollTop = aiAgentResults.scrollHeight;
+  }
+
+  const aiAgentHistory = [];
+
+  async function sendAiAgentMessage() {
+    if (!aiAgentInput || !aiAgentResults) return;
+    if (window.guestMode) {
+      if (aiAgentError) aiAgentError.textContent = 'דמו אורח: הסוכן לא מבצע שליחה ללא כניסה.';
+      return;
+    }
+    if (aiAgentError) aiAgentError.textContent = '';
+    const raw_text = (aiAgentInput.value || '').trim();
+    if (!raw_text) {
+      if (aiAgentError) aiAgentError.textContent = 'כתוב מה אתה צריך.';
+      return;
+    }
+    if (!aiAgentHistory.length) {
+      aiAgentHistory.push({ role: 'assistant', content: 'היי, ספר מה אתה צריך (מוצא, יעד, תאריך/שעה). אם חסר משהו אשאל.' });
+      if (aiAgentResults) {
+        appendAiAgentBubble('assistant', aiAgentHistory[0].content);
+      }
+    }
+    aiAgentHistory.push({ role: 'user', content: raw_text });
+    appendAiAgentBubble('user', raw_text);
+    aiAgentInput.value = '';
+    aiAgentResults.appendChild(Object.assign(document.createElement('div'), { innerHTML: '<div class="field-hint" style="margin-top:8px;">Grok חושב...</div>' }));
+    try {
+      const res = await fetch('/api/ai/grok/chat/', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': getCookie('csrftoken'),
+          'X-Requested-With': 'XMLHttpRequest',
+        },
+        body: JSON.stringify({ messages: aiAgentHistory }),
+      });
+      const json = await safeJson(res);
+      if (json.__error || json.error) {
+        // remove "thinking"
+        try { aiAgentResults.lastChild && aiAgentResults.removeChild(aiAgentResults.lastChild); } catch (e) {}
+        if (aiAgentError) aiAgentError.textContent = json.error || 'שגיאה.';
+        return;
+      }
+      // remove "thinking"
+      try { aiAgentResults.lastChild && aiAgentResults.removeChild(aiAgentResults.lastChild); } catch (e) {}
+      const reply = json.reply || '';
+      aiAgentHistory.push({ role: 'assistant', content: reply });
+      appendAiAgentBubble('assistant', reply);
+      const matches = Array.isArray(json.matches) ? json.matches : [];
+      if (matches.length) {
+        renderAiAgentMatches(matches);
+      }
+    } catch (e) {
+      try { aiAgentResults.lastChild && aiAgentResults.removeChild(aiAgentResults.lastChild); } catch (e2) {}
+      if (aiAgentError) aiAgentError.textContent = 'שגיאה ברשת.';
+    }
+  }
+
+  function openAiVolAgentModal() {
+    if (!aiVolAgentModal) return;
+    aiVolAgentModal.style.display = 'block';
+    if (aiVolAgentError) aiVolAgentError.textContent = '';
+    if (aiVolAgentResults) aiVolAgentResults.innerHTML = '';
+    if (aiVolAgentInput) aiVolAgentInput.value = '';
+
+    // initial assistant text shown immediately (before the user types)
+    if (aiVolHistory && !aiVolHistory.length && aiVolAgentResults) {
+      aiVolHistory.push({ role: 'assistant', content: 'היי, ספר מה אתה צריך (מתי אתה יוצא, מאיפה ולאן וכמה מקומות יש). אם חסר משהו אשאל.' });
+      appendAiVolBubble('assistant', aiVolHistory[0].content);
+    }
+
+    if (aiVolAgentInput) aiVolAgentInput.focus();
+  }
+
+  function closeAiVolAgentModal() {
+    if (!aiVolAgentModal) return;
+    aiVolAgentModal.style.display = 'none';
+  }
+
+  function appendAiVolBubble(role, text) {
+    if (!aiVolAgentResults) return;
+    const safe = String(text || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    const align = role === 'user' ? 'flex-start' : 'flex-end';
+    const bg = role === 'user' ? '#f1f5f9' : '#fee2e2';
+    const color = '#0f172a';
+    const wrap = document.createElement('div');
+    wrap.style.display = 'flex';
+    wrap.style.justifyContent = align;
+    wrap.style.marginTop = '8px';
+    wrap.innerHTML = `<div style="max-width:85%; padding:10px 12px; border-radius:14px; background:${bg}; color:${color}; border:1px solid #e2e8f0; white-space:pre-wrap;">${safe}</div>`;
+    aiVolAgentResults.appendChild(wrap);
+    aiVolAgentResults.scrollTop = aiVolAgentResults.scrollHeight;
+  }
+
+  function renderAiVolMatches(matches) {
+    if (!aiVolAgentResults) return;
+    if (!matches || !matches.length) return;
+    const title = document.createElement('div');
+    title.style.cssText = 'margin-top:10px;font-weight:900;color:#0f172a;';
+    title.textContent = 'מטופלים מתאימים:';
+    aiVolAgentResults.appendChild(title);
+    matches.forEach(function(r) {
+      const pickup = r.pickup || '';
+      const destination = r.destination || '';
+      const isRtl = (document.documentElement.dir || '').toLowerCase() === 'rtl';
+      const arrow = isRtl ? '←' : '→';
+      const route = `${pickup}${pickup && destination ? ' ' : ''}${arrow}${destination ? ' ' + destination : ''}`.trim();
+      const time = r.requested_time || '';
+      const notes = r.notes || '-';
+      const phone = r.phone || '-';
+      const card = document.createElement('div');
+      card.className = 'card';
+      card.style.cssText = 'margin-top:8px;padding:10px 12px;border-radius:10px;border:1px solid #e2e8f0;background:#f8fafc;box-shadow:0 1px 2px rgba(15,23,42,0.04);';
+      const acceptBtnHtml = window.guestMode
+        ? '<button type="button" class="btn-primary" style="padding:4px 10px;font-size:0.85rem;border-radius:999px;border:none;background:#2563eb;color:#fff;opacity:0.6;cursor:not-allowed;" disabled data-request-id="' + r.id + '">אשר</button>'
+        : '<button type="button" class="btn-primary" style="padding:4px 10px;font-size:0.85rem;border-radius:999px;border:none;background:#2563eb;color:#fff;cursor:pointer;" data-request-id="' + r.id + '">אשר</button>';
+      card.innerHTML =
+        '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px;">' +
+          '<div style="font-weight:900;color:#0f172a;">בקשת מטופל</div>' +
+          acceptBtnHtml +
+        '</div>' +
+        '<div style="color:#111827;">' + route + '</div>' +
+        '<div style="margin-top:4px;color:#475569;font-weight:700;">' + time + '</div>' +
+        '<div style="margin-top:6px;color:#111827;">הערות: ' + notes + '</div>' +
+        '<div style="margin-top:6px;color:#111827;">טלפון מטופל: ' + phone + '</div>';
+      const btn = card.querySelector('button[data-request-id]');
+      if (btn) {
+        btn.onclick = async function() {
+          if (window.guestMode) return;
+          const id = btn.dataset.requestId;
+          try {
+            const res = await fetch(`/api/requests/accept/${id}/`, {
+              method: 'POST',
+              headers: { 'X-CSRFToken': getCookie('csrftoken') },
+            });
+            const json = await safeJson(res);
+            if (json.error) {
+              alert(json.error);
+              return;
+            }
+            btn.disabled = true;
+            btn.textContent = 'אושרה';
+            // refresh lists
+            try { await loadOpenRequests(); } catch (e) {}
+            try { await loadAcceptedRequests(true); } catch (e) {}
+          } catch (e) {
+            alert('שגיאה באישור בקשה.');
+          }
+        };
+      }
+      aiVolAgentResults.appendChild(card);
+    });
+    aiVolAgentResults.scrollTop = aiVolAgentResults.scrollHeight;
+  }
+
+  const aiVolHistory = [];
+
+  async function sendAiVolAgentMessage() {
+    if (!aiVolAgentInput || !aiVolAgentResults) return;
+    if (window.guestMode) {
+      if (aiVolAgentError) aiVolAgentError.textContent = 'דמו אורח: הסוכן לא מבצע שליחה ללא כניסה.';
+      return;
+    }
+    if (aiVolAgentError) aiVolAgentError.textContent = '';
+    const raw_text = (aiVolAgentInput.value || '').trim();
+    if (!raw_text) {
+      if (aiVolAgentError) aiVolAgentError.textContent = 'כתוב מתי אתה יוצא, מאיפה ולאן.';
+      return;
+    }
+    if (!aiVolHistory.length) {
+      aiVolHistory.push({ role: 'assistant', content: 'שלום מתנדב, ספר בקצרה מתי אתה יוצא, מאיפה ולאן וכמה מקומות יש.' });
+      aiVolAgentResults.innerHTML = '';
+      appendAiVolBubble('assistant', aiVolHistory[0].content);
+    }
+    aiVolHistory.push({ role: 'user', content: raw_text });
+    appendAiVolBubble('user', raw_text);
+    aiVolAgentInput.value = '';
+    aiVolAgentResults.appendChild(Object.assign(document.createElement('div'), { innerHTML: '<div class="field-hint" style="margin-top:8px;">GROQ חושב...</div>' }));
+    try {
+      const res = await fetch('/api/ai/grok/volunteer/', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': getCookie('csrftoken'),
+          'X-Requested-With': 'XMLHttpRequest',
+        },
+        body: JSON.stringify({ messages: aiVolHistory }),
+      });
+      const json = await safeJson(res);
+      try { aiVolAgentResults.lastChild && aiVolAgentResults.removeChild(aiVolAgentResults.lastChild); } catch (e) {}
+      if (json.__error || json.error) {
+        if (aiVolAgentError) aiVolAgentError.textContent = json.error || 'שגיאה.';
+        return;
+      }
+      const reply = json.reply || '';
+      aiVolHistory.push({ role: 'assistant', content: reply });
+      appendAiVolBubble('assistant', reply);
+      const matches = Array.isArray(json.matches) ? json.matches : [];
+      if (matches.length) {
+        renderAiVolMatches(matches);
+      }
+    } catch (e) {
+      try { aiVolAgentResults.lastChild && aiVolAgentResults.removeChild(aiVolAgentResults.lastChild); } catch (e2) {}
+      if (aiVolAgentError) aiVolAgentError.textContent = 'שגיאה ברשת.';
+    }
+  }
+  if (role === 'sick') {
+    [aiAgentLaunch, aiAgentLaunchFooter].forEach(function(el) {
+      if (!el) return;
+      el.addEventListener('click', function(e) {
+        e.preventDefault();
+        openAiAgentModal();
+      });
+    });
+  }
+  if (aiAgentClose) {
+    aiAgentClose.addEventListener('click', function(e) {
+      e.preventDefault();
+      closeAiAgentModal();
+    });
+  }
+  if (aiAgentSend) {
+    aiAgentSend.addEventListener('click', function(e) {
+      e.preventDefault();
+      sendAiAgentMessage();
+    });
+  }
+  if (aiAgentInput) {
+    aiAgentInput.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        sendAiAgentMessage();
+      }
+      if (e.key === 'Escape') {
+        closeAiAgentModal();
+      }
+    });
+  }
+
+  if (role === 'volunteer') {
+    [aiVolAgentLaunch, aiVolAgentLaunchFooter].forEach(function(el) {
+      if (!el) return;
+      el.addEventListener('click', function(e) {
+        e.preventDefault();
+        openAiVolAgentModal();
+      });
+    });
+  }
+  if (aiVolAgentClose) {
+    aiVolAgentClose.addEventListener('click', function(e) {
+      e.preventDefault();
+      closeAiVolAgentModal();
+    });
+  }
+  if (aiVolAgentSend) {
+    aiVolAgentSend.addEventListener('click', function(e) {
+      e.preventDefault();
+      sendAiVolAgentMessage();
+    });
+  }
+  if (aiVolAgentInput) {
+    aiVolAgentInput.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        sendAiVolAgentMessage();
+      }
+      if (e.key === 'Escape') {
+        closeAiVolAgentModal();
+      }
+    });
+  }
+
+  // סוכן AI אוטומטי: Poll למעלה להתאמות שנמצאו בין מטופל למתנדב
+  // כשיש התאמה חדשה — קופץ לבד למודל הנכון ומציג כפתורי "הצטרף"/"אשר".
+  let autoAiKeyStorageKey = null;
+  let lastAutoAiKey = '';
+  try {
+    const uid = window.currentUserId || '';
+    autoAiKeyStorageKey = 'autoAiLastKey:' + uid + ':' + role;
+    lastAutoAiKey = localStorage.getItem(autoAiKeyStorageKey) || '';
+  } catch (e) {}
+  async function pollAutoAiSuggestions() {
+    try {
+      if (!role) return;
+      const res = await fetch('/api/ai/auto-suggestions/', {
+        method: 'GET',
+        headers: {
+          'X-Requested-With': 'XMLHttpRequest',
+        },
+      });
+      const json = await safeJson(res);
+      if (json.__error || json.error) return;
+
+      if (role === 'sick') {
+        const key = json.suggestion_key || '';
+        const offers = Array.isArray(json.offers) ? json.offers : [];
+        if (!key || !offers.length) return;
+        if (key === lastAutoAiKey) return;
+        lastAutoAiKey = key;
+        try { if (autoAiKeyStorageKey) localStorage.setItem(autoAiKeyStorageKey, lastAutoAiKey); } catch (e) {}
+
+        // reset conversation history so the initial message appears
+        try { aiAgentHistory.length = 0; } catch (e) {}
+        openAiAgentModal();
+        renderAiAgentMatches(offers);
+      } else if (role === 'volunteer') {
+        const key = json.suggestion_key || '';
+        const requests = Array.isArray(json.requests) ? json.requests : [];
+        if (!key || !requests.length) return;
+        if (key === lastAutoAiKey) return;
+        lastAutoAiKey = key;
+        try { if (autoAiKeyStorageKey) localStorage.setItem(autoAiKeyStorageKey, lastAutoAiKey); } catch (e) {}
+
+        try { aiVolHistory.length = 0; } catch (e) {}
+        openAiVolAgentModal();
+        renderAiVolMatches(requests);
+      }
+    } catch (e) {
+      // ignore network/polling errors
+    }
+  }
+
+  // Poll only when modals exist on the page (and only for real users)
+  if (!window.guestMode && ((role === 'sick' && aiAgentModal) || (role === 'volunteer' && aiVolAgentModal))) {
+    pollAutoAiSuggestions();
+    setInterval(pollAutoAiSuggestions, 10000);
+  }
 
   function openOffersModal() {
     if (!aiModal) return;
@@ -21,7 +431,7 @@ document.addEventListener('DOMContentLoaded', function() {
     if (aiOffersContainer && !aiOffersContainer.dataset.loaded) {
       // נטען כאן ישירות מהשרת כדי לא להיות תלויים בפונקציות אחרות
       aiOffersContainer.innerHTML = '<div class="field-hint">טוען נסיעות שפורסמו...</div>';
-      fetch('/api/ai/offers/', { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+      fetch('/api/ai/offers/' + (window.guestMode ? '?guest=1' : ''), { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
         .then(safeJson)
         .then(function(json) {
           if (json.__error || json.error) {
@@ -36,11 +446,14 @@ document.addEventListener('DOMContentLoaded', function() {
           var cardsHtml = offers.map(function(o) {
             var text = o.raw_text || '';
             var who = o.volunteer_username ? ('מתנדב: ' + o.volunteer_username) : '';
+            var joinBtnHtml = window.guestMode
+              ? '<button type="button" class="btn-primary" style="padding:4px 10px;font-size:0.85rem;border-radius:999px;border:none;background:#2563eb;color:#fff;opacity:0.6;cursor:not-allowed;" disabled>הצטרף</button>'
+              : '<button type="button" class="btn-primary" style="padding:4px 10px;font-size:0.85rem;border-radius:999px;border:none;background:#2563eb;color:#fff;cursor:pointer;" onclick="window.joinOffer && window.joinOffer(' + o.id + ', this)">הצטרף</button>';
             return (
               '<div class="card" data-offer-id="' + o.id + '" style="margin-bottom:10px;padding:10px 12px;border-radius:10px;border:1px solid #e2e8f0;background:#f8fafc;box-shadow:0 1px 2px rgba(15,23,42,0.04);">' +
                 '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">' +
                   '<div style="font-weight:700;color:#0f172a;font-size:0.98rem;">נסיעה מתנדב</div>' +
-                  '<button type="button" class="btn-primary" style="padding:4px 10px;font-size:0.85rem;border-radius:999px;border:none;background:#2563eb;color:#fff;cursor:pointer;" onclick="window.joinOffer && window.joinOffer(' + o.id + ')">הצטרפות לנסיעה</button>' +
+                  joinBtnHtml +
                 '</div>' +
                 '<div style="margin-bottom:4px;color:#111827;font-size:0.95rem;">' + text + '</div>' +
                 '<div style="font-size:0.85rem;color:#6b7280;">' + who + '</div>' +
@@ -73,6 +486,15 @@ document.addEventListener('DOMContentLoaded', function() {
       if (offerWrap) {
         var isHidden = offerWrap.style.display === 'none' || !offerWrap.style.display;
         offerWrap.style.display = isHidden ? 'block' : 'none';
+        // Update button text to match state
+        try {
+          if (aiLaunch) {
+            aiLaunch.textContent = isHidden ? 'הסתר טופס' : publishBtnDefaultText;
+          }
+          if (footerRideLink) {
+            footerRideLink.textContent = isHidden ? 'הסתר טופס' : publishBtnDefaultText;
+          }
+        } catch (e) {}
       }
       if (vPanel) {
         vPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -99,13 +521,13 @@ document.addEventListener('DOMContentLoaded', function() {
     aiLaunch.addEventListener('click', handleRidePublishClick);
   }
 
-  if (footerRideLink) {
-    footerRideLink.addEventListener('click', handleRidePublishClick);
-  }
-
-  // אם זה מתנדב – נטען את הרשימה אחרי שהאתחול הראשי יגדיר את הפונקציה
-  if (role === 'volunteer' && volunteerOffersContainer) {
-    window.__needLoadVolunteerOffers = true;
+  // Sync initial label on load for volunteers (in case form is already open)
+  if (role === 'volunteer') {
+    try {
+      var offerWrapInit = document.getElementById('vol-offer-wrap');
+      var isOpen = offerWrapInit && offerWrapInit.style.display === 'block';
+      if (aiLaunch) aiLaunch.textContent = isOpen ? 'הסתר טופס' : publishBtnDefaultText;
+    } catch (e) {}
   }
 
   if (aiCancel) {
@@ -114,6 +536,8 @@ document.addEventListener('DOMContentLoaded', function() {
       closeOffersModal();
     });
   }
+
+  // למטופל יש טוגל נפרד לטופס "יצירת בקשה" בתוך הפאנל.
 
   // כפתור "הצג התאמות" (Agents demo)
   var showBtn = document.getElementById('show-agent-matches');
@@ -125,8 +549,27 @@ document.addEventListener('DOMContentLoaded', function() {
 
   // הצטרפות לנסיעה שפורסמה – יוצר בקשה ומסמן אצל המתנדב כנסיעה מאושרת
   if (typeof window !== 'undefined') {
-    window.joinOffer = async function(offerId) {
+    async function cancelJoinedRequest(requestId) {
+      const res = await fetch(`/api/requests/cancel/${requestId}/`, {
+        method: 'POST',
+        headers: {
+          'X-CSRFToken': getCookie('csrftoken'),
+          'X-Requested-With': 'XMLHttpRequest',
+        },
+      });
+      const json = await safeJson(res);
+      if (json.__error || json.error) {
+        throw new Error(json.error || 'שגיאה בביטול נסיעה.');
+      }
+      return json;
+    }
+
+    window.joinOffer = async function(offerId, buttonEl) {
       try {
+        if (window.guestMode) {
+          alert('דמו אורח: אין אפשרות להצטרף לנסיעה ללא כניסה.');
+          return;
+        }
         const res = await fetch(`/api/ai/offers/${offerId}/join/`, {
           method: 'POST',
           headers: {
@@ -139,7 +582,19 @@ document.addEventListener('DOMContentLoaded', function() {
           alert(json.error || 'שגיאה בהצטרפות לנסיעה.');
           return;
         }
-        // הסרת הכרטיס מהרשימה במודל, כדי שלא תופיע שוב למטופל
+
+        // Update the UI on the clicked button (map popup / card) immediately
+        let joinedEl = null;
+        try {
+          if (buttonEl && buttonEl.parentNode) {
+            buttonEl.style.display = 'none';
+            joinedEl = document.createElement('div');
+            joinedEl.style.cssText = 'margin-top:6px;font-weight:700;color:#059669;';
+            joinedEl.textContent = 'הצטרפת לנסיעה';
+            buttonEl.parentNode.appendChild(joinedEl);
+          }
+        } catch (e) {}
+        // הסרת הנסיעה מהרשימה למעלה (מודל/כרטיסיות), כדי שלא תופיע שוב למטופל
         try {
           const container = document.getElementById('ai-offers-container');
           if (container) {
@@ -154,13 +609,60 @@ document.addEventListener('DOMContentLoaded', function() {
         } catch (e) {
           // אם יש בעיה ב־DOM לא מפילים את התהליך
         }
-        alert(json.message || 'הצטרפת לנסיעה. ניתן לראות אותה ברשימת הבקשות שלך.');
+        const requestId = json.request_id;
+        // No popup/modal. Inline cancel button instead.
+        try {
+          if (buttonEl && buttonEl.parentNode && requestId) {
+            const parent = buttonEl.parentNode;
+            const cancelInline = document.createElement('button');
+            cancelInline.type = 'button';
+            cancelInline.className = 'button';
+            cancelInline.style.cssText = 'margin-top:8px;background:#ef4444;color:#fff;border:none;padding:6px 10px;border-radius:999px;cursor:pointer;font-weight:700;font-size:0.9rem;';
+            cancelInline.textContent = 'בטל נסיעה';
+            cancelInline.onclick = async () => {
+              cancelInline.disabled = true;
+              try {
+                await cancelJoinedRequest(requestId);
+                // Restore the join button inside the popup/card
+                try {
+                  joinedEl && joinedEl.remove();
+                  cancelInline && cancelInline.remove();
+                  buttonEl.style.display = 'inline-block';
+                  buttonEl.textContent = 'הצטרף';
+                } catch (e2) {}
+
+                // Reload list/cards and refresh markers
+                try {
+                  if (aiOffersContainer) {
+                    aiOffersContainer.dataset.loaded = '';
+                    openOffersModal();
+                  }
+                } catch (e3) {}
+                try { if (window.refreshOfferMarkers) window.refreshOfferMarkers(); } catch (e4) {}
+                try { if (window.loadVolunteerOffers) window.loadVolunteerOffers(); } catch (e5) {}
+              } catch (e2) {
+                cancelInline.disabled = false;
+                alert(e2 && e2.message ? e2.message : 'שגיאה בביטול נסיעה.');
+              }
+            };
+            parent.appendChild(cancelInline);
+          }
+        } catch (e) {}
+
+        // Refresh map markers so matched offer disappears immediately
+        try {
+          if (window.refreshOfferMarkers) window.refreshOfferMarkers();
+        } catch (e) {}
       } catch (e) {
         alert('שגיאה ברשת בעת הצטרפות לנסיעה.');
       }
     };
 
     window.cancelOffer = async function(offerId) {
+      if (window.guestMode) {
+        alert('דמו אורח: אין אפשרות לבטל פרסום נסיעה ללא כניסה.');
+        return;
+      }
       if (!confirm('לבטל את פרסום הנסיעה הזו?')) return;
       try {
         const res = await fetch(`/api/ai/offer/${offerId}/cancel/`, {
@@ -175,13 +677,96 @@ document.addEventListener('DOMContentLoaded', function() {
           alert(json.error || 'שגיאה בביטול פרסום הנסיעה.');
           return;
         }
-        if (window.loadVolunteerOffers) {
-          window.loadVolunteerOffers();
-        }
+        try {
+          if (window.loadVolunteerOffers) window.loadVolunteerOffers();
+        } catch (e) {}
       } catch (e) {
         alert('שגיאה ברשת בעת ביטול פרסום הנסיעה.');
       }
     };
+  }
+});
+
+// רשימת "הנסיעות שפרסמת" למתנדב (לא מוצג במפה, רק ברשימה)
+document.addEventListener('DOMContentLoaded', function() {
+  var role = window.currentUserRole || '';
+  var volunteerOffersContainer = document.getElementById('volunteer-offers-container');
+  var toggleMyOffersBtn = document.getElementById('toggle-my-offers-btn');
+  if (role !== 'volunteer' || !volunteerOffersContainer) return;
+
+  async function loadVolunteerOffers() {
+    volunteerOffersContainer.innerHTML = '<div class="field-hint">טוען נסיעות שפרסמת...</div>';
+    try {
+      const res = await fetch('/api/ai/my-offers/' + (window.guestMode ? '?guest=1' : ''), {
+        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+      });
+      const json = await safeJson(res);
+      if (json.__error || json.error) {
+        volunteerOffersContainer.innerHTML = '<div class="field-error">שגיאה בטעינת נסיעות שפרסמת.</div>';
+        return;
+      }
+      const offers = Array.isArray(json.offers) ? json.offers : [];
+      if (!offers.length) {
+        volunteerOffersContainer.innerHTML = '<div class="field-hint">עדיין לא פרסמת נסיעות.</div>';
+        return;
+      }
+      const cards = offers.map(function(o) {
+        const sub = (o.from && o.to)
+          ? ('<div style="font-weight:800;color:#0f172a;margin-bottom:4px;">' + 'מ־' + o.from + ' אל ' + o.to + '</div>')
+          : '';
+        const text = o.raw_text || '';
+        const canCancel = o.status === 'open';
+        // keep only useful details (date/time/notes/phone) without duplicating the route line
+        let details = text;
+        if (sub) {
+          const m = details.match(/^נסיעה עתידית מ-(.+?)\s+אל\s+(.+?)\s+בתאריך\s+(\d{4}-\d{2}-\d{2})\s+בשעה\s+(\d{2}:\d{2})([\s\S]*)$/);
+          if (m) {
+            const suffix = (m[5] || '').trim();
+            details = `בתאריך ${m[3]} בשעה ${m[4]}` + (suffix ? ` ${suffix}` : '');
+          }
+        }
+        return (
+          '<div class="card" data-my-offer-id="' + o.id + '" style="margin-bottom:10px;padding:10px 12px;border-radius:10px;border:1px solid #e2e8f0;background:#f8fafc;box-shadow:0 1px 2px rgba(15,23,42,0.04);">' +
+            '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">' +
+              '<div style="font-weight:900;color:#0f172a;">נסיעה שפרסמת</div>' +
+              (canCancel ? '<button type="button" class="button" style="padding:4px 10px;font-size:0.85rem;border-radius:999px;" onclick="window.cancelOffer && window.cancelOffer(' + o.id + ')">בטל פרסום</button>' : '') +
+            '</div>' +
+            (sub || '') +
+            ('<div style="margin-top:6px;color:#111827;">' + details + '</div>') +
+          '</div>'
+        );
+      }).join('');
+      volunteerOffersContainer.innerHTML = cards;
+    } catch (e) {
+      volunteerOffersContainer.innerHTML = '<div class="field-error">שגיאה ברשת בעת טעינת נסיעות שפרסמת.</div>';
+    }
+  }
+
+  if (typeof window !== 'undefined') {
+    window.loadVolunteerOffers = loadVolunteerOffers;
+  }
+
+  if (toggleMyOffersBtn) {
+    // initial state: hidden (button shows "הנסיעות שפרסמת")
+    toggleMyOffersBtn.textContent = '🚗 נסיעות שפרסמת';
+    toggleMyOffersBtn.addEventListener('click', function(e) {
+      try { e.preventDefault(); e.stopPropagation(); } catch (err) {}
+      try { toggleMyOffersBtn.blur(); } catch (err) {}
+
+      const isHidden = volunteerOffersContainer.style.display === 'none' || !volunteerOffersContainer.style.display;
+      volunteerOffersContainer.style.display = isHidden ? 'block' : 'none';
+      toggleMyOffersBtn.textContent = isHidden ? 'הסתר נסיעות' : '🚗 נסיעות שפרסמת';
+      if (isHidden) {
+        // Load content only when opening
+        loadVolunteerOffers()
+          .catch(function() {})
+          .finally(function() {
+            // Don't force scroll positions; RTL can make scrollX behave oddly.
+          });
+      } else {
+        // Don't force scroll positions; keep layout stable.
+      }
+    });
   }
 });
 
@@ -213,6 +798,10 @@ document.addEventListener('DOMContentLoaded', function() {
 
   form.addEventListener('submit', function(e) {
     e.preventDefault();
+    if (window.guestMode) {
+      if (errorEl) errorEl.textContent = 'דמו אורח: אין אפשרות לפרסם נסיעה בלי כניסה.';
+      return;
+    }
     if (errorEl) errorEl.textContent = '';
     if (successEl) { successEl.style.display = 'none'; successEl.textContent = ''; }
 
@@ -243,6 +832,10 @@ document.addEventListener('DOMContentLoaded', function() {
         time: time,
         notes: notes,
         phone: phone,
+        from_lat: fromLat && fromLat.value,
+        from_lng: fromLng && fromLng.value,
+        to_lat: toLat && toLat.value,
+        to_lng: toLng && toLng.value,
       }),
     })
       .then(safeJson)
@@ -258,15 +851,29 @@ document.addEventListener('DOMContentLoaded', function() {
         // ניקוי השדות
         if (fromInput) fromInput.value = '';
         if (toInput) toInput.value = '';
+        // Clear Google Places autocomplete widget too (it hides the original input)
+        if (fromInput && fromInput.__placesElement && typeof fromInput.__placesElement.value !== 'undefined') {
+          fromInput.__placesElement.value = '';
+        }
+        if (toInput && toInput.__placesElement && typeof toInput.__placesElement.value !== 'undefined') {
+          toInput.__placesElement.value = '';
+        }
+        // remove placeholder text so fields look truly empty
+        if (fromInput) fromInput.placeholder = '';
+        if (toInput) toInput.placeholder = '';
         if (dateEl) dateEl.value = '';
         if (timeEl) timeEl.value = '';
         if (notesEl) notesEl.value = '';
         if (phoneEl) phoneEl.value = '';
-        // רענון רשימת "הנסיעות שפרסמת" למעלה אצל המתנדב
+        if (fromLat) fromLat.value = '';
+        if (fromLng) fromLng.value = '';
+        if (toLat) toLat.value = '';
+        if (toLng) toLng.value = '';
+        if (fromErr) fromErr.textContent = '';
+        if (toErr) toErr.textContent = '';
+        if (errorEl) errorEl.textContent = '';
         try {
-          if (window.loadVolunteerOffers) {
-            window.loadVolunteerOffers();
-          }
+          if (window.loadVolunteerOffers) window.loadVolunteerOffers();
         } catch (e) {}
       })
       .catch(function() {
@@ -1003,16 +1610,25 @@ function runAppInit() {
   const requestsContainer = document.getElementById('requests-container');
   const closedContainer = document.getElementById('closed-requests-container');
   const acceptedContainer = document.getElementById('accepted-requests-container');
-  const volunteerOffersContainer = document.getElementById('volunteer-offers-container');
   const createForm = document.getElementById('create-request-form');
+  const createRequestWrap = document.getElementById('create-request-wrap');
+  const toggleCreateRequestBtn = document.getElementById('toggle-create-request-btn');
   const showClosedBtn = document.getElementById('show-closed-btn');
   const showAcceptedBtn = document.getElementById('show-accepted-btn');
   const showOpenBtns = document.querySelectorAll('#show-open-btn');
   const role = window.currentUserRole || '';
+  const guestMode = window.guestMode === true;
+  const guestSimpleQuery = guestMode ? '?guest=1' : '';
+  const guestRequestsQuery = guestMode ? '?guest=1&role=' + encodeURIComponent(role) : '';
   const mapEl = document.getElementById('requests-map');
   const patientMapEl = document.getElementById('patient-map');
   const toggleVolunteerMapBtn = document.getElementById('toggle-volunteer-map');
+  const toggleVolunteerMapTopBtn = document.getElementById('toggle-volunteer-map-top');
+  const volunteerMapWrap = document.getElementById('volunteer-map-wrap');
+  const toggleRoutePlanBtn = document.getElementById('toggle-route-plan-btn');
+  const routePlanningWrap = document.getElementById('route-planning-wrap');
   const togglePatientMapBtn = document.getElementById('toggle-patient-map');
+  const togglePatientMapTopBtn = document.getElementById('toggle-patient-map-top');
   const routeStartLat = document.getElementById('route-start-lat');
   const routeStartLng = document.getElementById('route-start-lng');
   const routeStartInput = document.getElementById('route-start-input');
@@ -1045,6 +1661,43 @@ function runAppInit() {
   let volunteerPickupLat = null;
   let volunteerPickupLng = null;
   let volunteerLiveTimer = null;
+  let volunteerSharingEnabled = false;
+
+  // אם הוספנו כפתור למעלה - נסתיר את הכפתור הקטן למטה.
+  try {
+    if (toggleVolunteerMapTopBtn && toggleVolunteerMapBtn) toggleVolunteerMapBtn.style.display = 'none';
+    if (togglePatientMapTopBtn && togglePatientMapBtn) togglePatientMapBtn.style.display = 'none';
+  } catch (e) {}
+
+  // למטופל: טוגל נפרד ל"יצירת בקשה" (פותח/סוגר רק את הטופס)
+  if (toggleCreateRequestBtn && createRequestWrap) {
+    function isCreateHidden() {
+      return createRequestWrap.style.display === 'none' || !createRequestWrap.style.display;
+    }
+
+    function syncToggleLabel() {
+      toggleCreateRequestBtn.textContent = isCreateHidden() ? '✚ יצירת בקשה' : '✖ הסתר יצירת בקשה';
+    }
+
+    syncToggleLabel();
+
+    toggleCreateRequestBtn.addEventListener('click', () => {
+      const hidden = isCreateHidden();
+      createRequestWrap.style.display = hidden ? 'block' : 'none';
+      syncToggleLabel();
+      if (!hidden) {
+        // מרגיש טבעי: גלילה קטנה ליצירת בקשה כשהיא נפתחת
+        try { createRequestWrap.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (e) {}
+      }
+    });
+  }
+
+  function escapeHtml(s) {
+    return String(s ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+  }
 
   function isInsideIsrael(lat, lng) {
     return (
@@ -1069,6 +1722,7 @@ function runAppInit() {
   const destinationError = document.getElementById('destination-error');
   const phoneInput = document.getElementById('phone-input');
   const phoneError = document.getElementById('phone-error');
+  const dateInput = createForm ? createForm.querySelector('input[name="date"]') : null;
   const timeInput = createForm ? createForm.querySelector('input[name="time"]') : null;
   const createTimeError = document.getElementById('create-time-error');
   let createFormError = document.getElementById('create-form-error');
@@ -1118,59 +1772,7 @@ function runAppInit() {
     timeValid: true,
   };
 
-  async function loadVolunteerOffers() {
-    if (!volunteerOffersContainer) return;
-    volunteerOffersContainer.innerHTML = '<div class="field-hint">טוען נסיעות שפרסמת...</div>';
-    try {
-      const res = await fetch('/api/ai/my-offers/', {
-        headers: { 'X-Requested-With': 'XMLHttpRequest' },
-      });
-      const json = await safeJson(res);
-      if (json.__error || json.error) {
-        volunteerOffersContainer.innerHTML = '<div class="field-error">שגיאה בטעינת נסיעות שפרסמת.</div>';
-        return;
-      }
-      const offers = Array.isArray(json.offers) ? json.offers : [];
-      if (!offers.length) {
-        volunteerOffersContainer.innerHTML = '<div class="field-hint">עדיין לא פרסמת נסיעות.</div>';
-        return;
-      }
-      const cards = offers.map(function(o) {
-        const statusLabel = o.status === 'open'
-          ? 'פתוחה למטופלים'
-          : (o.status === 'matched' ? 'יש מטופל שהצטרף' : 'בוטלה');
-        const canCancel = o.status === 'open';
-        const sub = (o.from && o.to)
-          ? ('מ־' + o.from + ' אל ' + o.to)
-          : (o.raw_text || '');
-        return (
-          '<div class="card" data-my-offer-id="' + o.id + '" style="margin-bottom:8px;padding:8px 10px;border-radius:8px;border:1px solid #e5e7eb;background:#f9fafb;">' +
-            '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">' +
-              '<div style="font-weight:600;color:#0f172a;font-size:0.95rem;">נסיעה #' + o.id + '</div>' +
-              '<div style="font-size:0.8rem;color:#6b7280;">' + statusLabel + '</div>' +
-            '</div>' +
-            '<div style="margin-bottom:4px;color:#111827;font-size:0.9rem;">' + sub + '</div>' +
-            (canCancel
-              ? '<button type="button" class="button" style="padding:3px 8px;font-size:0.8rem;border-radius:999px;" onclick="window.cancelOffer && window.cancelOffer(' + o.id + ')">ביטול פרסום</button>'
-              : ''
-            ) +
-          '</div>'
-        );
-      }).join('');
-      volunteerOffersContainer.innerHTML = cards;
-    } catch (e) {
-      volunteerOffersContainer.innerHTML = '<div class="field-error">שגיאה ברשת בעת טעינת נסיעות שפרסמת.</div>';
-    }
-  }
-
-  // לחשוף גלובלית כדי שנוכל לרענן אחרי פרסום/ביטול (וגם כשהעמוד עולה)
-  if (typeof window !== 'undefined') {
-    window.loadVolunteerOffers = loadVolunteerOffers;
-    if (window.__needLoadVolunteerOffers) {
-      window.__needLoadVolunteerOffers = false;
-      loadVolunteerOffers();
-    }
-  }
+  // בכוונה אין כאן "נסיעות מתנדבים" למתנדב.
 
   async function loadPublishedOffers(target) {
     const container = target || publishedOffersContainer;
@@ -1304,7 +1906,8 @@ function runAppInit() {
     const hasCoords = isInsideIsrael(lat, lng);
     const hasAddress = Boolean(routeStartInput && routeStartInput.value);
     const hasStart = hasCoords || hasAddress;
-    routeSuggestBtn.disabled = !hasStart || selectedRouteIds.size === 0;
+    // Guest demo is read-only: disable route planning actions.
+    routeSuggestBtn.disabled = guestMode || !hasStart || selectedRouteIds.size === 0;
   }
 
   function setRouteNotice(message) {
@@ -1357,48 +1960,126 @@ function hidePanel(el) {
 
   initPatientMap();
   updatePatientMap();
-  if (patientMap && patientOffersLayer) loadOfferMarkers(patientMap, patientOffersLayer);
-  setupPatientLiveLocation();
-  schedulePatientLiveLocationCheck();
 
-  if (toggleVolunteerMapBtn && mapEl) {
-    const stored = localStorage.getItem('volunteerMapHidden') === 'true';
-    if (stored) {
-      mapEl.classList.add('map-hidden');
-      toggleVolunteerMapBtn.textContent = 'הצג מפה';
-    }
+  if (patientMap && patientOffersLayer) {
+    loadOfferMarkers(patientMap, patientOffersLayer);
+  }
 
-    toggleVolunteerMapBtn.addEventListener('click', () => {
-      const isHidden = !mapEl.classList.contains('map-hidden');
-      if (isHidden) {
-        mapEl.classList.add('map-hidden');
-      } else {
-        mapEl.classList.remove('map-hidden');
-        setTimeout(() => { if (map) map.invalidateSize(); }, 200);
+  // Patient: load open requests immediately (otherwise user must click "open requests" first).
+  if (role === 'sick' && !guestMode) {
+    try { loadOpenRequests(); } catch (e) {}
+  }
+  // expose refresh hook so joinOffer can hide matched offers immediately
+  if (typeof window !== 'undefined') {
+    window.refreshOfferMarkers = function() {
+      try {
+        if (patientMap && patientOffersLayer) loadOfferMarkers(patientMap, patientOffersLayer);
+      } catch (e) {}
+    };
+  }
+  // Guest: show offers, but do not poll live locations (read-only experience)
+  if (!guestMode) {
+    setupPatientLiveLocation();
+    schedulePatientLiveLocationCheck();
+  }
+
+  if (mapEl && volunteerMapWrap) {
+    const volunteerToggles = [toggleVolunteerMapBtn, toggleVolunteerMapTopBtn].filter(Boolean);
+    if (volunteerToggles.length) {
+      const stored = localStorage.getItem('volunteerMapHidden') === 'true';
+
+      function setVolunteerHidden(hidden) {
+        if (hidden) {
+          volunteerMapWrap.classList.add('map-hidden');
+        } else {
+          volunteerMapWrap.classList.remove('map-hidden');
+        }
+        volunteerToggles.forEach(btn => {
+          btn.textContent = hidden ? '🗺️ הצג מפה' : '🗺️ הסתר מפה';
+        });
+        localStorage.setItem('volunteerMapHidden', String(hidden));
       }
-      toggleVolunteerMapBtn.textContent = isHidden ? 'הצג מפה' : 'הסתר מפה';
-      localStorage.setItem('volunteerMapHidden', String(isHidden));
+
+      setVolunteerHidden(stored);
+
+      volunteerToggles.forEach(btn => {
+        btn.addEventListener('click', () => {
+          const currentlyHidden = volunteerMapWrap.classList.contains('map-hidden');
+          const nextHidden = !currentlyHidden;
+          setVolunteerHidden(nextHidden);
+          if (!nextHidden) {
+            setTimeout(() => {
+              try {
+                if (map) {
+                  map.invalidateSize(true);
+                  map.fitBounds(israelBounds);
+                }
+              } catch (e) {}
+            }, 200);
+          }
+        });
+      });
+    }
+  }
+
+  // מתג: הצג/הסתר "תכנון מסלול" (רק למתנדב)
+  if (toggleRoutePlanBtn && routePlanningWrap) {
+    function getRouteHidden() {
+      return routePlanningWrap.style.display === 'none' || !routePlanningWrap.style.display;
+    }
+    function updateRouteToggleLabel() {
+      const isHidden = getRouteHidden();
+      toggleRoutePlanBtn.textContent = isHidden ? 'תכנון מסלול' : 'הסתר תכנון מסלול';
+    }
+    updateRouteToggleLabel();
+
+    toggleRoutePlanBtn.addEventListener('click', () => {
+      const isHidden = getRouteHidden();
+      routePlanningWrap.style.display = isHidden ? 'block' : 'none';
+      updateRouteToggleLabel();
+
+      // Leaflet לפעמים צריך re-measure כשמשנים גובה/תצוגה.
+      try {
+        if (map && volunteerMapWrap && !volunteerMapWrap.classList.contains('map-hidden')) {
+          setTimeout(() => {
+            try { map.invalidateSize(true); } catch (e) {}
+            try { map.fitBounds(israelBounds); } catch (e) {}
+          }, 150);
+        }
+      } catch (e) {}
     });
   }
 
-  if (togglePatientMapBtn && patientMapEl) {
-    const stored = localStorage.getItem('patientMapHidden') === 'true';
-    if (stored) {
-      patientMapEl.classList.add('map-hidden');
-      togglePatientMapBtn.textContent = 'הצג מפה';
-    }
+  if (patientMapEl) {
+    const patientToggles = [togglePatientMapBtn, togglePatientMapTopBtn].filter(Boolean);
+    if (patientToggles.length) {
+      const stored = localStorage.getItem('patientMapHidden') === 'true';
 
-    togglePatientMapBtn.addEventListener('click', () => {
-      const isHidden = !patientMapEl.classList.contains('map-hidden');
-      if (isHidden) {
-        patientMapEl.classList.add('map-hidden');
-      } else {
-        patientMapEl.classList.remove('map-hidden');
-        setTimeout(() => { if (patientMap) patientMap.invalidateSize(); }, 200);
+      function setPatientHidden(hidden) {
+        if (hidden) {
+          patientMapEl.classList.add('map-hidden');
+        } else {
+          patientMapEl.classList.remove('map-hidden');
+        }
+        patientToggles.forEach(btn => {
+          btn.textContent = hidden ? '🗺️ הצג מפה' : '🗺️ הסתר מפה';
+        });
+        localStorage.setItem('patientMapHidden', String(hidden));
       }
-      togglePatientMapBtn.textContent = isHidden ? 'הצג מפה' : 'הסתר מפה';
-      localStorage.setItem('patientMapHidden', String(isHidden));
-    });
+
+      setPatientHidden(stored);
+
+      patientToggles.forEach(btn => {
+        btn.addEventListener('click', () => {
+          const currentlyHidden = patientMapEl.classList.contains('map-hidden');
+          const nextHidden = !currentlyHidden;
+          setPatientHidden(nextHidden);
+          if (!nextHidden) {
+            setTimeout(() => { if (patientMap) patientMap.invalidateSize(); }, 200);
+          }
+        });
+      });
+    }
   }
 
   if (pickupInput && destinationInput) {
@@ -1428,7 +2109,16 @@ function hidePanel(el) {
   }
 
   if (routeUseLocationBtn) {
+    // Guest volunteer demo is read-only: block using "my location" in route planning.
+    if (guestMode && role === 'volunteer') {
+      routeUseLocationBtn.disabled = true;
+      routeUseLocationBtn.style.opacity = '0.6';
+      routeUseLocationBtn.style.cursor = 'not-allowed';
+    }
     routeUseLocationBtn.addEventListener('click', () => {
+      if (guestMode && role === 'volunteer') {
+        return;
+      }
       if (!navigator.geolocation) {
         setFieldError(routeError, 'Geolocation לא נתמך בדפדפן.');
         return;
@@ -1528,6 +2218,12 @@ function hidePanel(el) {
     const destLat = Number(destLatInput && destLatInput.value);
     const destLng = Number(destLngInput && destLngInput.value);
 
+    // Guest patient demo is read-only: keep submit button locked always.
+    if (submitBtn && window.guestMode && role === 'sick') {
+      submitBtn.disabled = true;
+      return;
+    }
+
     const hasPickupText = Boolean(pickupInput && pickupInput.value);
     const hasDestText = Boolean(destinationInput && destinationInput.value);
     const hasPickupCoords = Boolean(pickupLatInput && pickupLatInput.value) && Number.isFinite(pickupLat) && pickupLat !== 0;
@@ -1544,12 +2240,13 @@ function hidePanel(el) {
 
     createState.pickupValid = hasPickupText && hasPickupCoords;
     createState.destinationValid = hasDestText && hasDestCoords;
+
+    const hasDate = Boolean(dateInput && dateInput.value);
     const hasTime = Boolean(timeInput && timeInput.value);
-    const timeInPast = hasTime && isDateTimeInPast(timeInput.value);
-    createState.timeValid = hasTime && !timeInPast;
-    if (createTimeError) {
-      createTimeError.textContent = timeInPast ? 'התאריך חלף' : '';
-    }
+    const combinedTime = (hasDate && hasTime) ? `${dateInput.value}T${timeInput.value}` : '';
+    const timeInPast = combinedTime ? isDateTimeInPast(combinedTime) : false;
+    createState.timeValid = hasDate && hasTime && !timeInPast;
+    if (createTimeError) createTimeError.textContent = timeInPast ? 'התאריך חלף' : '';
 
     if (phoneInput) {
       const phoneCheck = normalizeIsraeliPhone(phoneInput.value);
@@ -1821,8 +2518,13 @@ function hidePanel(el) {
       tap: false,
     });
     setTimeout(() => {
-      map.invalidateSize(true);
-      map.fitBounds(israelBounds);
+      try { map.invalidateSize(true); } catch (e) {}
+      // Don't fit bounds while the wrapper is hidden (Leaflet will compute wrong zoom).
+      const isHidden = volunteerMapWrap && volunteerMapWrap.classList.contains('map-hidden');
+      const isVisible = !isHidden && mapEl.offsetWidth > 0 && mapEl.offsetHeight > 0;
+      if (isVisible) {
+        try { map.fitBounds(israelBounds); } catch (e) {}
+      }
     }, 100);
     // Leaflet marker icon via CDN (local static files here are placeholders)
     delete L.Icon.Default.prototype._getIconUrl;
@@ -1880,62 +2582,18 @@ function hidePanel(el) {
   function updatePatientMap() {
     if (!patientMap) return;
 
-    const pickupLat = Number(pickupLatInput && pickupLatInput.value);
-    const pickupLng = Number(pickupLngInput && pickupLngInput.value);
-    const destLat = Number(destLatInput && destLatInput.value);
-    const destLng = Number(destLngInput && destLngInput.value);
-
-    const hasPickupCoords =
-      Number.isFinite(pickupLat) &&
-      Number.isFinite(pickupLng) &&
-      pickupLat >= ISRAEL_BOUNDS.south &&
-      pickupLat <= ISRAEL_BOUNDS.north &&
-      pickupLng >= ISRAEL_BOUNDS.west &&
-      pickupLng <= ISRAEL_BOUNDS.east;
-
-    const hasDestCoords =
-      Number.isFinite(destLat) &&
-      Number.isFinite(destLng) &&
-      destLat >= ISRAEL_BOUNDS.south &&
-      destLat <= ISRAEL_BOUNDS.north &&
-      destLng >= ISRAEL_BOUNDS.west &&
-      destLng <= ISRAEL_BOUNDS.east;
-
-    // Remove old markers if coordinates are missing or invalid
-    if (!hasPickupCoords && patientPickupMarker) {
-      patientMap.removeLayer(patientPickupMarker);
+    // Patient map should NOT show pickup/destination markers (only volunteer rides + live volunteer location).
+    if (patientPickupMarker) {
+      try { patientMap.removeLayer(patientPickupMarker); } catch (e) {}
       patientPickupMarker = null;
     }
-    if (!hasDestCoords && patientDestMarker) {
-      patientMap.removeLayer(patientDestMarker);
+    if (patientDestMarker) {
+      try { patientMap.removeLayer(patientDestMarker); } catch (e) {}
       patientDestMarker = null;
     }
 
-    // Add or update markers if coordinates exist and are inside Israel bounds
-    if (hasPickupCoords) {
-      if (!patientPickupMarker) {
-        patientPickupMarker = L.marker([pickupLat, pickupLng]).addTo(patientMap);
-      } else {
-        patientPickupMarker.setLatLng([pickupLat, pickupLng]);
-      }
-    }
-    if (hasDestCoords) {
-      if (!patientDestMarker) {
-        patientDestMarker = L.marker([destLat, destLng]).addTo(patientMap);
-      } else {
-        patientDestMarker.setLatLng([destLat, destLng]);
-      }
-    }
-
-    // Always fit bounds to markers if exist, else to Israel
-    const bounds = [];
-    if (patientPickupMarker) bounds.push(patientPickupMarker.getLatLng());
-    if (patientDestMarker) bounds.push(patientDestMarker.getLatLng());
-    if (bounds.length > 0) {
-      patientMap.fitBounds(bounds, { padding: [20, 20], maxZoom: 16 });
-    } else {
-      patientMap.fitBounds(israelBounds);
-    }
+    // Keep default view; offers/live-location will adjust view when needed.
+    patientMap.fitBounds(israelBounds);
     setTimeout(() => patientMap.invalidateSize(true), 100);
   }
 
@@ -1952,6 +2610,15 @@ function hidePanel(el) {
     if (patientVolunteerMarker && patientMap) { patientMap.removeLayer(patientVolunteerMarker); patientVolunteerMarker = null; }
     const wrapEl = document.getElementById('patient-volunteer-location-wrap');
     if (wrapEl) wrapEl.style.display = 'none';
+  }
+
+  function clearPatientVolunteerMarkerOnly() {
+    try {
+      if (patientVolunteerMarker && patientMap) {
+        patientMap.removeLayer(patientVolunteerMarker);
+      }
+    } catch (e) {}
+    patientVolunteerMarker = null;
   }
 
   async function pollVolunteerLocationForPatient(requestId) {
@@ -1975,10 +2642,12 @@ function hidePanel(el) {
         return;
       }
       if (json.no_location) {
+        clearPatientVolunteerMarkerOnly();
         setPatientLocationStatus(noLocationMsg, true);
         return;
       }
       if (json.no_assignment) {
+        clearPatientVolunteerMarkerOnly();
         setPatientLocationStatus('אין מינוי מתנדב לבקשה זו.', true);
         return;
       }
@@ -1992,8 +2661,10 @@ function hidePanel(el) {
       }
       if (json.error) {
         if (json.error === 'no_location') {
+          clearPatientVolunteerMarkerOnly();
           setPatientLocationStatus(noLocationMsg, true);
         } else if (json.error === 'no_assignment') {
+          clearPatientVolunteerMarkerOnly();
           setPatientLocationStatus('אין מינוי מתנדב לבקשה זו.', true);
         } else {
           setPatientLocationStatus('לא התקבל מיקום. נסה לרענן.', true);
@@ -2001,6 +2672,7 @@ function hidePanel(el) {
         return;
       }
       if (res.status !== 200 || json.lat == null || json.lng == null) {
+        clearPatientVolunteerMarkerOnly();
         setPatientLocationStatus(noLocationMsg, true);
         return;
       }
@@ -2023,7 +2695,10 @@ function hidePanel(el) {
       if (patientMapEl && patientMapEl.classList.contains('map-hidden')) {
         patientMapEl.classList.remove('map-hidden');
         const toggleBtn = document.getElementById('toggle-patient-map');
-        if (toggleBtn) toggleBtn.textContent = 'הסתר מפה';
+        const toggleTopBtn = document.getElementById('toggle-patient-map-top');
+        if (toggleBtn) toggleBtn.textContent = '🗺️ הסתר מפה';
+        if (toggleTopBtn) toggleTopBtn.textContent = '🗺️ הסתר מפה';
+        try { localStorage.setItem('patientMapHidden', 'false'); } catch (e) {}
         setTimeout(() => { if (patientMap) patientMap.invalidateSize(); }, 50);
       }
 
@@ -2135,7 +2810,10 @@ function hidePanel(el) {
         if (patientMapEl && patientMapEl.classList.contains('map-hidden')) {
           patientMapEl.classList.remove('map-hidden');
           const toggleBtn = document.getElementById('toggle-patient-map');
-          if (toggleBtn) toggleBtn.textContent = 'הסתר מפה';
+          const toggleTopBtn = document.getElementById('toggle-patient-map-top');
+          if (toggleBtn) toggleBtn.textContent = '🗺️ הסתר מפה';
+          if (toggleTopBtn) toggleTopBtn.textContent = '🗺️ הסתר מפה';
+          try { localStorage.setItem('patientMapHidden', 'false'); } catch (e) {}
           setTimeout(() => { if (patientMap) patientMap.invalidateSize(); }, 50);
         }
         if (!patientVolunteerMarker) {
@@ -2182,7 +2860,7 @@ function hidePanel(el) {
     if (!patientMap) initPatientMap();
 
     try {
-      const res = await fetch('/api/requests/closed/');
+      const res = await fetch('/api/requests/closed/' + (guestMode ? guestSimpleQuery : ''));
       const json = await safeJson(res);
       if (json.__error || !Array.isArray(json.requests)) return;
 
@@ -2254,6 +2932,21 @@ function hidePanel(el) {
   }
 
   function stopVolunteerLiveLocation() {
+    // tell server to clear last location so patient stops seeing marker
+    try {
+      if (volunteerActiveRequestId) {
+        fetch(`/api/requests/location/${volunteerActiveRequestId}/`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCookie('csrftoken'),
+            'X-Requested-With': 'XMLHttpRequest',
+          },
+          body: JSON.stringify({ stop: true }),
+        }).catch(() => {});
+      }
+    } catch (e) {}
+
     if (volunteerWatchId !== null && navigator.geolocation && navigator.geolocation.clearWatch) {
       navigator.geolocation.clearWatch(volunteerWatchId);
     }
@@ -2261,6 +2954,7 @@ function hidePanel(el) {
     volunteerActiveRequestId = null;
     volunteerPickupLat = null;
     volunteerPickupLng = null;
+    volunteerSharingEnabled = false;
     setVolunteerLocationStatus('שיתוף המיקום הופסק.', true);
   }
 
@@ -2302,6 +2996,7 @@ function hidePanel(el) {
     volunteerActiveRequestId = requestId;
     volunteerPickupLat = pickupLat != null && Number.isFinite(Number(pickupLat)) ? Number(pickupLat) : null;
     volunteerPickupLng = pickupLng != null && Number.isFinite(Number(pickupLng)) ? Number(pickupLng) : null;
+    volunteerSharingEnabled = true;
     setVolunteerLocationStatus('מקבל מיקום...', true);
     navigator.geolocation.getCurrentPosition(
       pos => {
@@ -2353,8 +3048,9 @@ function hidePanel(el) {
 
   async function checkVolunteerLiveLocation() {
     if (role !== 'volunteer') return;
+    if (!volunteerSharingEnabled) return;
     try {
-      const res = await fetch('/api/requests/accepted/');
+      const res = await fetch('/api/requests/accepted/' + (guestMode ? guestSimpleQuery : ''));
       const json = await safeJson(res);
       if (json.__error || !Array.isArray(json.requests)) return;
 
@@ -2390,6 +3086,7 @@ function hidePanel(el) {
 
   function setupVolunteerLiveLocation() {
     if (role !== 'volunteer') return;
+    // don't auto-start sharing; only poll when user enabled it
     checkVolunteerLiveLocation();
     if (volunteerLiveTimer) clearInterval(volunteerLiveTimer);
     volunteerLiveTimer = setInterval(checkVolunteerLiveLocation, 15000);
@@ -2408,7 +3105,30 @@ function hidePanel(el) {
       if (!isInsideIsrael(lat, lng)) return;
 
       const marker = L.marker([lat, lng]);
-      marker.bindPopup(`${formatRoute(r.pickup, r.destination)}<br>${r.requested_time}`);
+      const expired = isRequestExpired(r);
+      const route = escapeHtml(formatRoute(r.pickup, r.destination));
+      const time = escapeHtml(r.requested_time || '');
+      const notes = escapeHtml(r.notes || '-');
+      const phone = escapeHtml(r.phone || '-');
+      const sickUser = escapeHtml(r.sick_username || '');
+      const acceptBtnHtml = (role === 'volunteer' && r.status === 'open' && !expired)
+        ? (guestMode
+          ? `<button type="button" class="btn-primary" style="margin-top:8px;padding:6px 12px;font-size:0.9rem;border-radius:999px;border:none;background:#2563eb;color:#fff;opacity:0.6;cursor:not-allowed;" disabled>אשר</button>`
+          : `<button type="button" class="btn-primary" style="margin-top:8px;padding:6px 12px;font-size:0.9rem;border-radius:999px;border:none;background:#2563eb;color:#fff;cursor:pointer;" onclick="window.acceptRequestFromMap && window.acceptRequestFromMap(${Number(r.id)})">אשר</button>`)
+        : '';
+      const expiredHtml = expired ? `<div style="margin-top:6px;color:#b45309;font-weight:700;">התאריך חלף</div>` : '';
+      marker.bindPopup(
+        `<div style="min-width:220px;">
+          <div style="font-weight:800;color:#0f172a;">נסיעת מטופל</div>
+          ${sickUser ? `<div style="margin-top:4px;color:#334155;">מטופל: ${sickUser}</div>` : ''}
+          <div style="margin-top:6px;color:#111827;">${route}</div>
+          <div style="margin-top:4px;color:#475569;font-weight:700;">${time}</div>
+          <div style="margin-top:6px;color:#111827;">הערות: ${notes}</div>
+          <div style="margin-top:6px;color:#111827;">טלפון: ${phone}</div>
+          ${acceptBtnHtml}
+          ${expiredHtml}
+        </div>`
+      );
       marker.addTo(markersLayer);
       points.push([lat, lng]);
     });
@@ -2425,27 +3145,60 @@ function hidePanel(el) {
   async function loadOfferMarkers(targetMap, targetLayer) {
     if (!targetMap || !targetLayer) return;
     try {
-      const res = await fetch('/api/ai/offers/', { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+      const res = await fetch('/api/ai/offers/' + (guestMode ? '?guest=1' : ''), { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
       const json = await safeJson(res);
       if (json.__error || json.error) return;
       const offers = Array.isArray(json.offers) ? json.offers : [];
       targetLayer.clearLayers();
-      offers.forEach(function(o) {
-        const lat = Number(o.from_lat);
-        const lng = Number(o.from_lng);
-        if (!Number.isFinite(lat) || !Number.isFinite(lng) || !isInsideIsrael(lat, lng)) return;
-        const marker = L.circleMarker([lat, lng], {
-          radius: 10,
-          fillColor: '#22c55e',
-          color: '#15803d',
-          weight: 2,
-          fillOpacity: 0.9,
-        });
+
+      for (const o of offers) {
+        let lat = Number(o.from_lat);
+        let lng = Number(o.from_lng);
+
+        // fallback for old offers without saved coords
+        if ((!Number.isFinite(lat) || !Number.isFinite(lng)) && o.parsed_from) {
+          const geo = await geocodeAddress(o.parsed_from);
+          if (geo && Number.isFinite(geo.lat) && Number.isFinite(geo.lng)) {
+            lat = geo.lat;
+            lng = geo.lng;
+          }
+        }
+
+        if (!Number.isFinite(lat) || !Number.isFinite(lng) || !isInsideIsrael(lat, lng)) continue;
+
+        // published future rides: use the same default marker icon as the volunteer map
+        const marker = L.marker([lat, lng]);
         const who = o.volunteer_username ? 'מתנדב: ' + o.volunteer_username : '';
-        const text = (o.raw_text || '').substring(0, 120);
-        marker.bindPopup('<strong>נסיעה מתנדב</strong><br>' + who + '<br>' + (o.parsed_from || '') + ' → ' + (o.parsed_to || '') + '<br>' + text);
+        // Show route in a stable visual direction
+        const routeLine = ((o.parsed_from || '') && (o.parsed_to || ''))
+          ? `${o.parsed_from} → ${o.parsed_to}`
+          : '';
+        const routeLineHtml = routeLine ? `<span dir="ltr" style="unicode-bidi:embed;">${escapeHtml(routeLine)}</span>` : '';
+
+        // למנוע כפילות: אם יש לנו שורת מסלול, נציג בטקסט רק תאריך/שעה/הערות (בלי "מ-... אל ...")
+        let detailsText = (o.raw_text || '').trim();
+        if (routeLine) {
+          const m = detailsText.match(/^נסיעה עתידית מ-(.+?)\s+אל\s+(.+?)\s+בתאריך\s+(\d{4}-\d{2}-\d{2})\s+בשעה\s+(\d{2}:\d{2})([\s\S]*)$/);
+          if (m) {
+            const date = m[3];
+            const time = m[4];
+            const suffix = (m[5] || '').trim();
+            detailsText = `בתאריך ${date} בשעה ${time}` + (suffix ? ` ${suffix}` : '');
+          }
+        }
+
+        const safeText = detailsText
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;');
+        const joinBtn = guestMode
+          ? `<button type="button" class="btn-primary" style="margin-top:6px;padding:4px 10px;font-size:0.85rem;border-radius:999px;border:none;background:#2563eb;color:#fff;opacity:0.6;cursor:not-allowed;" disabled>הצטרף</button>`
+          : `<button type="button" class="btn-primary" style="margin-top:6px;padding:4px 10px;font-size:0.85rem;border-radius:999px;border:none;background:#2563eb;color:#fff;cursor:pointer;" onclick="window.joinOffer && window.joinOffer(${o.id}, this)">הצטרף</button>`;
+        marker.bindPopup(
+          `<strong>נסיעה מתנדב</strong><br>${who}${routeLineHtml ? `<br>${routeLineHtml}` : ''}<br>${safeText}<br>${joinBtn}`
+        );
         marker.addTo(targetLayer);
-      });
+      }
     } catch (e) {
       if (typeof console !== 'undefined' && console.warn) console.warn('loadOfferMarkers', e);
     }
@@ -2453,10 +3206,16 @@ function hidePanel(el) {
 
   async function loadOpenRequests() {
     if (!requestsContainer) return;
+    // Guest sick: no requests should be shown at all (they are not "the logged-in patient").
+    if (guestMode && role === 'sick') {
+      requestsContainer.innerHTML =
+        '<div class="field-hint" style="margin-top:8px;">בדמו אורח-מטופל: אין בקשות להצגה.</div>';
+      return;
+    }
     try {
       selectedRouteIds.clear();
       requestMeta.clear();
-      const res = await fetch('/api/requests/');
+      const res = await fetch('/api/requests/' + (guestMode ? guestRequestsQuery : ''));
       const json = await safeJson(res);
       if (json.__error) {
         requestsContainer.innerHTML = '<p class="no-requests">שגיאת שרת. נסה להתחבר מחדש.</p>';
@@ -2478,7 +3237,6 @@ function hidePanel(el) {
         requestsContainer.innerHTML = '<p class="no-requests">אין בקשות פתוחות.</p>';
         if (role === 'volunteer') {
           updateMapMarkers([]);
-          if (map && offersLayer) loadOfferMarkers(map, offersLayer);
         }
         return;
       }
@@ -2562,6 +3320,8 @@ function hidePanel(el) {
             } else {
               selectedRouteIds.delete(r.id);
             }
+            // Selection changed → any previously suggested route is no longer valid
+            clearRouteUI();
             updateRouteButtonState();
           });
 
@@ -2575,8 +3335,9 @@ function hidePanel(el) {
           const acceptBtn = document.createElement('button');
           acceptBtn.className = 'accept-btn';
           acceptBtn.textContent = 'קבל';
-          acceptBtn.disabled = !!expired;
+          acceptBtn.disabled = guestMode || !!expired;
           acceptBtn.onclick = async () => {
+            if (guestMode) return;
             const res = await fetch(`/api/requests/accept/${r.id}/`, {
               method: 'POST',
               headers: { 'X-CSRFToken': getCookie('csrftoken') },
@@ -2589,8 +3350,9 @@ function hidePanel(el) {
           const rejectBtn = document.createElement('button');
           rejectBtn.className = 'button';
           rejectBtn.textContent = 'דחה';
-          rejectBtn.disabled = !!expired;
+          rejectBtn.disabled = guestMode || !!expired;
           rejectBtn.onclick = async () => {
+            if (guestMode) return;
             const res = await fetch(`/api/requests/reject/${r.id}/`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCookie('csrftoken') },
@@ -2609,7 +3371,6 @@ function hidePanel(el) {
 
       if (role === 'volunteer') {
         updateMapMarkers(reqs);
-        if (map && offersLayer) loadOfferMarkers(map, offersLayer);
       }
 
     } catch (err) {
@@ -2807,6 +3568,13 @@ function hidePanel(el) {
     hidePanel(requestsContainer);
     hidePanel(acceptedContainer);
 
+    // Guest sick: show consistent demo message for closed requests too.
+    if (guestMode && role === 'sick') {
+      closedContainer.innerHTML =
+        '<div class="field-hint" style="margin-top:8px;">בדמו אורח-מטופל: אין בקשות להצגה.</div>';
+      return;
+    }
+
     closedContainer.innerHTML = '<p>...טוען בקשות סגורות</p>';
 
     try {
@@ -2863,9 +3631,12 @@ function hidePanel(el) {
   async function loadAcceptedRequests() {
     if (!acceptedContainer) return;
 
-    showPanel(acceptedContainer);
-    hidePanel(requestsContainer);
-    hidePanel(closedContainer);
+    const preservePanels = arguments.length > 0 ? !!arguments[0] : false;
+    if (!preservePanels) {
+      showPanel(acceptedContainer);
+      hidePanel(requestsContainer);
+      hidePanel(closedContainer);
+    }
 
     acceptedContainer.innerHTML = '<p>...טוען בקשות מאושרות</p>';
 
@@ -2928,6 +3699,8 @@ function hidePanel(el) {
           } else {
             selectedRouteIds.delete(r.id);
           }
+          // Selection changed → any previously suggested route is no longer valid
+          clearRouteUI();
           updateRouteButtonState();
         });
         const label = document.createElement('label');
@@ -2972,6 +3745,37 @@ function hidePanel(el) {
       await loadOpenRequests();
     };
   });
+
+  // Allow accepting directly from map popup without losing current view
+  if (typeof window !== 'undefined') {
+    window.acceptRequestFromMap = async function(reqId) {
+      try {
+        if (window.guestMode) {
+          alert('דמו אורח: אין אפשרות לאשר נסיעה ללא כניסה.');
+          return;
+        }
+        const res = await fetch(`/api/requests/accept/${reqId}/`, {
+          method: 'POST',
+          headers: { 'X-CSRFToken': getCookie('csrftoken') },
+        });
+        const json = await res.json().catch(() => ({}));
+        if (json && json.error) {
+          alert(json.error);
+          return;
+        }
+        // refresh open requests (cards + markers)
+        await loadOpenRequests();
+        // if accepted list is currently visible, refresh it in-place (do not switch panels)
+        try {
+          if (acceptedContainer && isVisible(acceptedContainer)) {
+            await loadAcceptedRequests(true);
+          }
+        } catch (e) {}
+      } catch (e) {
+        alert('שגיאה ברשת בעת אישור נסיעה.');
+      }
+    };
+  }
 
   if (showClosedBtn) {
     showClosedBtn.onclick = async () => {
@@ -3035,6 +3839,10 @@ function hidePanel(el) {
       });
     }
 
+    if (dateInput) {
+      dateInput.addEventListener('input', () => { updateCreateSubmitState(); });
+      dateInput.addEventListener('change', () => { updateCreateSubmitState(); });
+    }
     if (timeInput) {
       timeInput.addEventListener('input', () => { updateCreateSubmitState(); });
       timeInput.addEventListener('change', () => { updateCreateSubmitState(); });
@@ -3042,6 +3850,10 @@ function hidePanel(el) {
 
     createForm.onsubmit = async e => {
       e.preventDefault();
+      if (window.guestMode) {
+        try { alert('דמו אורח: אין אפשרות ליצור בקשה בלי כניסה.'); } catch (err) {}
+        return false;
+      }
       setCreateFormError('');
       setCreateFormNotice('');
       let pickupLatRaw = (pickupLatInput && pickupLatInput.value) || (pickupInput && pickupInput.dataset && pickupInput.dataset.lat) || '';
@@ -3068,7 +3880,9 @@ function hidePanel(el) {
       let hasDestCoords = Boolean(destLatInput && destLatInput.value) && Number.isFinite(destLat) && destLat !== 0;
       const hasPickupText = Boolean(pickupInput && pickupInput.value);
       const hasDestText = Boolean(destinationInput && destinationInput.value);
+      const hasDate = Boolean(dateInput && dateInput.value);
       const hasTime = Boolean(timeInput && timeInput.value);
+      const combinedTime = (hasDate && hasTime) ? `${dateInput.value}T${timeInput.value}` : '';
 
       if (hasPickupText && !hasPickupCoords) {
         const coords = await geocodeAddress(pickupInput.value);
@@ -3104,10 +3918,17 @@ function hidePanel(el) {
         }
       }
 
-      if (!hasPickupText || !hasDestText || !hasPickupCoords || !hasDestCoords || !hasTime) {
+      if (!hasPickupText || !hasDestText || !hasPickupCoords || !hasDestCoords || !hasDate || !hasTime) {
         createState.pickupValid = hasPickupText && hasPickupCoords;
         createState.destinationValid = hasDestText && hasDestCoords;
-        createState.timeValid = hasTime;
+        createState.timeValid = hasDate && hasTime && !(combinedTime && isDateTimeInPast(combinedTime));
+      }
+
+      // Always recompute time validity from date+time before final submit checks.
+      if (hasDate && hasTime && combinedTime) {
+        const timeInPast = isDateTimeInPast(combinedTime);
+        createState.timeValid = !timeInPast;
+        if (createTimeError) createTimeError.textContent = timeInPast ? 'התאריך חלף' : '';
       }
 
       if (!createState.pickupValid || !createState.destinationValid || !createState.phoneValid || !createState.timeValid) {
@@ -3131,7 +3952,7 @@ function hidePanel(el) {
       const payload = {
         pickup: createForm.querySelector('[name=pickup]').value,
         destination: createForm.querySelector('[name=destination]').value,
-        time: createForm.querySelector('[name=time]').value,
+        time: combinedTime,
         notes: createForm.querySelector('[name=notes]').value,
         phone: phoneResult.normalized,
         pickup_lat: pickupLatRaw,
@@ -3328,50 +4149,71 @@ function hidePanel(el) {
   if (role === 'volunteer') {
     initMap();
     const shareLocationBtn = document.getElementById('volunteer-share-location-btn');
-    if (shareLocationBtn) {
-      shareLocationBtn.addEventListener('click', async () => {
-        try {
-          const res = await fetch('/api/requests/accepted/');
-          const json = await safeJson(res);
-          if (json.__error || !Array.isArray(json.requests)) {
-            setVolunteerLocationStatus('שגיאה בטעינת הבקשות. נסה לרענן.', true);
-            return;
-          }
-          const now = new Date();
-          const upcoming = json.requests
-            .filter(r => typeof r.requested_time === 'string')
-            .map(r => ({ raw: r, date: new Date(r.requested_time.replace(' ', 'T')) }))
-            .filter(item => !isNaN(item.date.getTime()) && item.date.getTime() >= now.getTime());
-          upcoming.sort((a, b) => a.date - b.date);
-          const next = upcoming[0];
-          if (!next) {
-            setVolunteerLocationStatus('אין נסיעה מאושרת בעתיד. אחרי שתאשר נסיעה, לחץ שוב.', true);
-            return;
-          }
-          const diffMinutes = (next.date.getTime() - now.getTime()) / 60000;
-          if (diffMinutes > 45) {
-            setVolunteerLocationStatus('הנסיעה המאושרת בעוד יותר מ־45 דקות. שיתוף מיקום יתאפשר כ־45 דקות לפני.', true);
-            return;
-          }
-          if (diffMinutes < -15) {
-            setVolunteerLocationStatus('הנסיעה כבר עברה.', true);
-            return;
-          }
-          startVolunteerLiveLocation(next.raw.id, next.raw.pickup_lat, next.raw.pickup_lng);
-        } catch (e) {
-          console.warn(e);
-          setVolunteerLocationStatus('שגיאה. נסה לרענן.', true);
-        }
-      });
-    }
     const stopLocationBtn = document.getElementById('volunteer-stop-location-btn');
-    if (stopLocationBtn) {
-      stopLocationBtn.addEventListener('click', () => stopVolunteerLiveLocation());
+
+    if (guestMode) {
+      // Read-only experience: disable live-location actions.
+      if (shareLocationBtn) {
+        shareLocationBtn.disabled = true;
+        shareLocationBtn.style.opacity = '0.6';
+        shareLocationBtn.style.cursor = 'not-allowed';
+      }
+      if (stopLocationBtn) {
+        stopLocationBtn.disabled = true;
+        stopLocationBtn.style.opacity = '0.6';
+        stopLocationBtn.style.cursor = 'not-allowed';
+      }
+    } else {
+      if (shareLocationBtn) {
+        shareLocationBtn.addEventListener('click', async () => {
+          try {
+            const res = await fetch('/api/requests/accepted/');
+            const json = await safeJson(res);
+            if (json.__error || !Array.isArray(json.requests)) {
+              setVolunteerLocationStatus('שגיאה בטעינת הבקשות. נסה לרענן.', true);
+              return;
+            }
+            const now = new Date();
+            const upcoming = json.requests
+              .filter(r => typeof r.requested_time === 'string')
+              .map(r => ({ raw: r, date: new Date(r.requested_time.replace(' ', 'T')) }))
+              .filter(item => !isNaN(item.date.getTime()) && item.date.getTime() >= now.getTime());
+            upcoming.sort((a, b) => a.date - b.date);
+            const next = upcoming[0];
+            if (!next) {
+              setVolunteerLocationStatus('אין נסיעה מאושרת בעתיד. אחרי שתאשר נסיעה, לחץ שוב.', true);
+              return;
+            }
+            const diffMinutes = (next.date.getTime() - now.getTime()) / 60000;
+            if (diffMinutes > 45) {
+              setVolunteerLocationStatus('הנסיעה המאושרת בעוד יותר מ־45 דקות. שיתוף מיקום יתאפשר כ־45 דקות לפני.', true);
+              return;
+            }
+            if (diffMinutes < -15) {
+              setVolunteerLocationStatus('הנסיעה כבר עברה.', true);
+              return;
+            }
+            startVolunteerLiveLocation(next.raw.id, next.raw.pickup_lat, next.raw.pickup_lng);
+          } catch (e) {
+            console.warn(e);
+            setVolunteerLocationStatus('שגיאה. נסה לרענן.', true);
+          }
+        });
+      }
+      if (stopLocationBtn) {
+        stopLocationBtn.addEventListener('click', () => stopVolunteerLiveLocation());
+      }
+      setupVolunteerLiveLocation();
+      connectRealtime();
+    }
+
+    // Always show the open requests cards/map (read-only for guests).
+    loadOpenRequests();
+  } else {
+    if (!guestMode) {
+      // אם משתמש בפאנל מטופל - קריאות כאן מטופלות לפני סוף runAppInit
     }
   }
-  setupVolunteerLiveLocation();
-  connectRealtime();
-  loadOpenRequests();
 } // סוף runAppInit
 
   // הרצת האתחול: אם הדף כבר נטען (סקריפט עם defer) – להריץ מיד; אחרת להמתין ל-DOMContentLoaded

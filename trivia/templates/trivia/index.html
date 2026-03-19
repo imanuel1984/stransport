@@ -12,7 +12,11 @@
     </div>
 
     <div class="header-actions">
-      <a class="btn ghost" href="/">⬅ חזרה לבית</a>
+      {% if request.GET.guest == '1' %}
+        <a class="btn ghost" href="/guest/?role={{ request.GET.role|default:'sick' }}">⬅ חזרה לבית</a>
+      {% else %}
+        <a class="btn ghost" href="/">⬅ חזרה לבית</a>
+      {% endif %}
     </div>
   </div>
 

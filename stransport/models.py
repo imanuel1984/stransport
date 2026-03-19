@@ -120,6 +120,10 @@ class RideOffer(models.Model):
     parsed_time = models.TimeField(null=True, blank=True)
     parsed_from = models.CharField(max_length=255, blank=True)
     parsed_to = models.CharField(max_length=255, blank=True)
+    from_lat = models.FloatField(null=True, blank=True)
+    from_lng = models.FloatField(null=True, blank=True)
+    to_lat = models.FloatField(null=True, blank=True)
+    to_lng = models.FloatField(null=True, blank=True)
 
     class Meta:
         ordering = ["-created_at"]

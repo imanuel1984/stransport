@@ -38,7 +38,8 @@ from .tasks import notify_new_request, generate_ai_summary
 import json
 import re
 import urllib.parse
-from datetime import timedelta
+from datetime import datetime, timedelta
+import traceback
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 from django.views.decorators.csrf import csrf_exempt
@@ -46,11 +47,33 @@ from django.views.decorators.csrf import csrf_exempt
 logger = logging.getLogger(__name__)
 
 
+def guest_home(request):
+    """
+    דף "כניסה כאורח" – מציג הסברים בלבד, בלי הפעלת פיצ'רים/קריאות לשרת.
+    המעבר בין מטופל למתנדב נעשה דרך querystring: /guest/?role=sick|volunteer
+    """
+    role = request.GET.get("role", "sick")
+    if role not in {"sick", "volunteer"}:
+        role = "sick"
+    return render(
+        request,
+        "stransport/home.html",
+        {
+            "guest_mode": True,
+            "guest_role": role,
+        },
+    )
+
+
 def login_required_json(view_func):
     @wraps(view_func)
     def _wrapped(request, *args, **kwargs):
         if not request.user.is_authenticated:
-            return JsonResponse({"error": "Authentication required"}, status=401)
+            # Guest demo support: allow read-only GET/HEAD calls with ?guest=1
+            # (write actions stay blocked because they are POST/PUT/PATCH/DELETE).
+            is_guest_read = request.GET.get("guest") == "1" and request.method in {"GET", "HEAD"}
+            if not is_guest_read:
+                return JsonResponse({"error": "Authentication required"}, status=401)
         return view_func(request, *args, **kwargs)
     return _wrapped
 
@@ -443,15 +466,20 @@ def broadcast_request_event(event, request_obj, notify_volunteers=True, notify_p
 def requests_api(request):
     try:
         delete_expired_requests()
-        role = getattr(request.user.profile, "role", "")
+        is_guest_read = request.GET.get("guest") == "1" and not request.user.is_authenticated
+        role = getattr(request.user.profile, "role", "") if not is_guest_read else (request.GET.get("role") or "sick")
         now = timezone.now()
         cutoff = now - timedelta(days=1)
         if role == "volunteer":
-            qs = TransportRequest.objects.filter(status="open", no_volunteers_available=False).exclude(
-                rejections__volunteer=request.user
-            )
+            qs = TransportRequest.objects.filter(status="open", no_volunteers_available=False)
+            if not is_guest_read:
+                qs = qs.exclude(rejections__volunteer=request.user)
         elif role == "sick":
-            qs = TransportRequest.objects.filter(sick=request.user, status="open")
+            # guest: show open requests read-only; user: show only their requests
+            if is_guest_read:
+                qs = TransportRequest.objects.filter(status="open")
+            else:
+                qs = TransportRequest.objects.filter(sick=request.user, status="open")
         else:
             qs = TransportRequest.objects.none()
         qs = qs.filter(requested_time__gte=cutoff).order_by("-created_at")
@@ -615,7 +643,14 @@ def cancel_request_api(request, req_id):
     try:
         if request.user.profile.role != "sick":
             return JsonResponse({"error": "Only sick users can cancel"}, status=403)
-        ride_request = get_object_or_404(TransportRequest, id=req_id, sick=request.user, status="open")
+        # Allow cancelling both open and accepted requests (e.g. joined a volunteer-published ride)
+        ride_request = get_object_or_404(
+            TransportRequest,
+            id=req_id,
+            sick=request.user,
+        )
+        if ride_request.status not in {"open", "accepted"}:
+            return JsonResponse({"error": "Request cannot be cancelled"}, status=400)
 
         expired_response = check_request_not_expired(ride_request)
         if expired_response:
@@ -635,6 +670,9 @@ def cancel_request_api(request, req_id):
 def accepted_requests_api(request):
     try:
         delete_expired_requests()
+        is_guest_read = request.GET.get("guest") == "1" and not request.user.is_authenticated
+        if is_guest_read:
+            return JsonResponse({"requests": []})
         if request.user.profile.role != "volunteer":
             return JsonResponse({"requests": []})
         now = timezone.now()
@@ -663,6 +701,9 @@ def accepted_requests_api(request):
 def closed_requests_api(request):
     try:
         delete_expired_requests()
+        is_guest_read = request.GET.get("guest") == "1" and not request.user.is_authenticated
+        if is_guest_read:
+            return JsonResponse({"requests": []})
         if request.user.profile.role != "sick":
             return JsonResponse({"requests": []})
 
@@ -741,6 +782,15 @@ def volunteer_location_api(request, req_id):
                 data = json.loads((raw.decode("utf-8") if raw else "{}"))
             except (ValueError, UnicodeDecodeError, AttributeError):
                 return JsonResponse({"error": "Invalid JSON body"}, status=400)
+
+            # Allow volunteer to explicitly stop sharing location for this request
+            if data.get("stop") is True:
+                try:
+                    VolunteerLocation.objects.filter(assignment=assignment).delete()
+                except Exception:
+                    logger.warning("Failed to delete VolunteerLocation (req_id=%s)", req_id, exc_info=True)
+                return JsonResponse({"success": True, "stopped": True})
+
             lat = parse_optional_float(data.get("lat"))
             lng = parse_optional_float(data.get("lng"))
             if lat is None or lng is None:
@@ -1267,16 +1317,6 @@ def parse_ai_ride_to_request(raw_text):
     }
 
 
-# --- מצב AI: דף נפרד (מתנדב: הצעת נסיעה בטקסט חופשי | מטופל: בקשת טקסט → התאמות או בקשה חדשה) ---
-@login_required
-def ai_mode_page(request):
-    user_role = getattr(getattr(request.user, "profile", None), "role", None) or ""
-    return render(request, "stransport/ai_mode.html", {
-        "current_user": request.user,
-        "user_role": user_role,
-    })
-
-
 @csrf_exempt
 @login_required_json
 def ai_offer_api(request):
@@ -1293,9 +1333,34 @@ def ai_offer_api(request):
         time = (data.get("time") or "").strip()
         notes = (data.get("notes") or "").strip()
         phone = (data.get("phone") or "").strip()
+        from_lat = parse_optional_float(data.get("from_lat"))
+        from_lng = parse_optional_float(data.get("from_lng"))
+        to_lat = parse_optional_float(data.get("to_lat"))
+        to_lng = parse_optional_float(data.get("to_lng"))
 
         if not from_addr or not to_addr or not date or not time:
             return JsonResponse({"error": "יש למלא מוצא, יעד, תאריך ושעה."}, status=400)
+
+        parsed_date = None
+        parsed_time = None
+        try:
+            parsed_date = datetime.strptime(date, "%Y-%m-%d").date()
+        except Exception:
+            parsed_date = None
+        try:
+            parsed_time = datetime.strptime(time, "%H:%M").time()
+        except Exception:
+            parsed_time = None
+
+        # Fallback: try geocoding if coords not provided
+        if (from_lat is None or from_lng is None) and from_addr:
+            coords = geocode_address(from_addr)
+            if coords:
+                from_lat, from_lng = coords
+        if (to_lat is None or to_lng is None) and to_addr:
+            coords = geocode_address(to_addr)
+            if coords:
+                to_lat, to_lng = coords
 
         raw_text = (
             f"נסיעה עתידית מ-{from_addr} אל {to_addr} בתאריך {date} בשעה {time}"
@@ -1309,6 +1374,12 @@ def ai_offer_api(request):
             status="open",
             parsed_from=from_addr,
             parsed_to=to_addr,
+            parsed_date=parsed_date,
+            parsed_time=parsed_time,
+            from_lat=from_lat,
+            from_lng=from_lng,
+            to_lat=to_lat,
+            to_lng=to_lng,
         )
         return JsonResponse({"success": True, "id": offer.id, "message": "הנסיעה פורסמה ומוצעת למטופלים."})
     except Exception as e:
@@ -1323,26 +1394,129 @@ def ai_offers_list_api(request):
         return JsonResponse({"error": "Invalid request"}, status=400)
     try:
         offers = RideOffer.objects.filter(status="open").select_related("volunteer").order_by("-created_at")[:50]
-        data = []
-        for o in offers:
-            from_lat, from_lng = None, None
-            if o.parsed_from:
-                coords = geocode_address(o.parsed_from)
-                if coords:
-                    from_lat, from_lng = coords
-            data.append({
+        data = [
+            {
                 "id": o.id,
                 "raw_text": o.raw_text,
                 "volunteer_username": o.volunteer.username,
                 "created_at": o.created_at.isoformat(),
                 "parsed_from": o.parsed_from or "",
                 "parsed_to": o.parsed_to or "",
-                "from_lat": from_lat,
-                "from_lng": from_lng,
-            })
+                "from_lat": o.from_lat,
+                "from_lng": o.from_lng,
+                "to_lat": o.to_lat,
+                "to_lng": o.to_lng,
+            }
+            for o in offers
+        ]
         return JsonResponse({"offers": data})
     except Exception as e:
         return JsonResponse({"error": str(e)}, status=500)
+
+
+@csrf_exempt
+@login_required_json
+def ai_auto_suggestions_api(request):
+    """
+    סוכן AI אוטומטי: מזהה התאמות בין המטופל למתנדב ומחזיר הצעות לרול הנוכחי.
+    אין כאן "דחיפה" אמיתית בזמן-אמת (ללא WebSockets בדף) — ה-frontend עושה Poll.
+    """
+    if request.method != "GET":
+        return JsonResponse({"error": "Invalid request"}, status=400)
+
+    try:
+        role = getattr(request.user.profile, "role", None) or ""
+    except Exception:
+        role = ""
+
+    # Patient side: show matching RideOffers for the latest open TransportRequest
+    if role == "sick":
+        req = (
+            TransportRequest.objects.filter(sick=request.user, status="open")
+            .order_by("-created_at")
+            .first()
+        )
+        if not req:
+            return JsonResponse({"role": "sick", "suggestion_key": "", "offers": []})
+
+        offers_qs = (
+            RideOffer.objects.filter(status="open")
+            .select_related("volunteer")
+            .order_by("-created_at")[:30]
+        )
+        scored_offers = []
+        for o in offers_qs:
+            offer_when = _parse_offer_datetime(o) or (timezone.now() + timedelta(hours=1))
+            sc = _score_request_against_offer(req, o, offer_when)
+            if sc >= 0.2:
+                scored_offers.append(
+                    {
+                        "id": o.id,
+                        "raw_text": o.raw_text,
+                        "volunteer_username": o.volunteer.username,
+                        "score": round(sc, 2),
+                    }
+                )
+
+        scored_offers.sort(key=lambda x: x.get("score") or 0, reverse=True)
+        matches = scored_offers[:5]
+
+        best_offer_id = ''
+        if matches and isinstance(matches, list) and len(matches) > 0:
+            try:
+                best_offer_id = str(matches[0].get('id') or '')
+            except Exception:
+                best_offer_id = ''
+        suggestion_key = "sick|" + str(req.id) + "|" + best_offer_id
+        return JsonResponse({"role": "sick", "suggestion_key": suggestion_key, "offers": matches})
+
+    # Volunteer side: show matching patient TransportRequests for the volunteer's open RideOffers
+    if role == "volunteer":
+        offers_qs = (
+            RideOffer.objects.filter(volunteer=request.user, status="open")
+            .order_by("-created_at")[:8]
+        )
+        offers_list = list(offers_qs)
+        if not offers_list:
+            return JsonResponse({"role": "volunteer", "suggestion_key": "", "requests": []})
+
+        requests_qs = (
+            TransportRequest.objects.filter(status="open", no_volunteers_available=False)
+            .exclude(rejections__volunteer=request.user)
+            .order_by("-requested_time")[:20]
+        )
+
+        candidates = []
+        for r in requests_qs:
+            best_score = 0.0
+            best_offer_id = None
+            for o in offers_list:
+                offer_when = _parse_offer_datetime(o) or (timezone.now() + timedelta(hours=1))
+                sc = _score_request_against_offer(r, o, offer_when)
+                if sc > best_score:
+                    best_score = sc
+                    best_offer_id = o.id
+
+            if best_score < 0.2:
+                continue
+            sr = serialize_request(r)
+            sr["match_score"] = round(best_score, 2)
+            sr["match_reason"] = "התאמה לפי קואורדינטות/כתובות וזמן"
+            sr["matched_offer_id"] = best_offer_id
+            candidates.append(sr)
+
+        candidates.sort(key=lambda x: (x.get("match_score") or 0), reverse=True)
+        candidates = candidates[:5]
+
+        best_req_id = ''
+        best_offer_id = ''
+        if candidates and isinstance(candidates, list) and len(candidates) > 0:
+            best_req_id = str(candidates[0].get('id') or '')
+            best_offer_id = str(candidates[0].get('matched_offer_id') or '')
+        suggestion_key = "vol|" + best_req_id + "|" + best_offer_id
+        return JsonResponse({"role": "volunteer", "suggestion_key": suggestion_key, "requests": candidates})
+
+    return JsonResponse({"role": role, "suggestion_key": "", "offers": [], "requests": []})
 
 
 @csrf_exempt
@@ -1357,8 +1531,10 @@ def ai_my_offers_api(request):
         profile = getattr(request.user, "profile", None)
         if not profile or getattr(profile, "role", None) != "volunteer":
             return JsonResponse({"offers": []})
+        # Show only currently published (open) offers in the "My published rides" list.
+        # Once a patient joins, the offer becomes "matched" and should disappear from here.
         offers = (
-            RideOffer.objects.filter(volunteer=request.user)
+            RideOffer.objects.filter(volunteer=request.user, status="open")
             .order_by("-created_at")[:50]
         )
         data = [
@@ -1397,6 +1573,103 @@ def ai_offer_cancel_api(request, offer_id):
         return JsonResponse({"error": str(e)}, status=500)
 
 
+def _parse_offer_datetime(offer):
+    """
+    ניסיון להוציא את התאריך/שעה מהנסיעה הפורסמה.
+    קודם משתמש ב-parsed_date/parsed_time ואז fallback דרך regex על raw_text.
+    """
+    try:
+        if getattr(offer, "parsed_date", None) and getattr(offer, "parsed_time", None):
+            dt = datetime.combine(offer.parsed_date, offer.parsed_time)
+            if timezone.is_naive(dt):
+                dt = timezone.make_aware(dt, timezone.get_current_timezone())
+            return dt
+    except Exception:
+        pass
+
+    # Fallback לפי הטקסט:
+    # "נסיעה עתידית מ-{from} אל {to} בתאריך YYYY-MM-DD בשעה HH:MM ..."
+    try:
+        raw = getattr(offer, "raw_text", "") or ""
+        m = re.search(r"בתאריך\s+(\d{4}-\d{2}-\d{2})\s+בשעה\s+(\d{2}:\d{2})", raw)
+        if not m:
+            return None
+        d = datetime.strptime(m.group(1), "%Y-%m-%d").date()
+        t = datetime.strptime(m.group(2), "%H:%M").time()
+        dt = datetime.combine(d, t)
+        if timezone.is_naive(dt):
+            dt = timezone.make_aware(dt, timezone.get_current_timezone())
+        return dt
+    except Exception:
+        return None
+
+
+def _score_request_against_offer(req, offer, offer_when):
+    """
+    ציון התאמה פשוט כדי לזהות אם יש ללקוח כבר TransportRequest פתוחה תואמת,
+    כדי שלא ניצור בקשה כפולה.
+    """
+    score = 0.0
+    pickup_req = (getattr(req, "pickup_address", "") or "").strip()
+    dest_req = (getattr(req, "destination", "") or "").strip()
+    pickup_offer = (getattr(offer, "parsed_from", "") or "").strip()
+    dest_offer = (getattr(offer, "parsed_to", "") or "").strip()
+
+    if pickup_req and pickup_offer:
+        a = pickup_req.lower()
+        b = pickup_offer.lower()
+        if b in a or a in b:
+            score += 0.45
+
+    if dest_req and dest_offer:
+        a = dest_req.lower()
+        b = dest_offer.lower()
+        if b in a or a in b:
+            score += 0.45
+
+    # ציון לפי מרחק קואורדינטות (אם קיימות)
+    try:
+        if (
+            getattr(req, "pickup_lat", None) is not None
+            and getattr(req, "pickup_lng", None) is not None
+            and getattr(offer, "from_lat", None) is not None
+            and getattr(offer, "from_lng", None) is not None
+        ):
+            dist_pickup = haversine_meters(req.pickup_lat, req.pickup_lng, offer.from_lat, offer.from_lng)
+            if dist_pickup <= 2000:
+                score += 0.15
+    except Exception:
+        pass
+
+    try:
+        if (
+            getattr(req, "dest_lat", None) is not None
+            and getattr(req, "dest_lng", None) is not None
+            and getattr(offer, "to_lat", None) is not None
+            and getattr(offer, "to_lng", None) is not None
+        ):
+            dist_dest = haversine_meters(req.dest_lat, req.dest_lng, offer.to_lat, offer.to_lng)
+            if dist_dest <= 2000:
+                score += 0.15
+    except Exception:
+        pass
+
+    # זמן (חלון ±3 שעות)
+    try:
+        if offer_when and getattr(req, "requested_time", None):
+            if timezone.is_naive(req.requested_time):
+                req_time = timezone.make_aware(req.requested_time, timezone.get_current_timezone())
+            else:
+                req_time = req.requested_time
+            delta_hours = abs((req_time - offer_when).total_seconds()) / 3600.0
+            if delta_hours <= 3.0:
+                score += 0.2
+    except Exception:
+        pass
+
+    return min(1.0, score)
+
+
 @csrf_exempt
 @login_required_json
 def ai_join_offer_api(request, offer_id):
@@ -1419,40 +1692,94 @@ def ai_join_offer_api(request, offer_id):
         pickup = offer.parsed_from or "לא צוין מוצא"
         destination = offer.parsed_to or "לא צוין יעד"
 
-        # זמן משוער – אם אין לנו שדות תאריך/שעה, קובעים שעה קדימה כברירת מחדל
-        when = timezone.now() + timedelta(hours=1)
+        # תאריך/שעה מתוך ההצעה (כדי להתאים לבקשה קיימת ולא ליצור כפילויות)
+        offer_when = _parse_offer_datetime(offer) or (timezone.now() + timedelta(hours=1))
 
-        pickup_lat = None
-        pickup_lng = None
-        dest_lat = None
-        dest_lng = None
+        pickup_lat = offer.from_lat
+        pickup_lng = offer.from_lng
+        dest_lat = offer.to_lat
+        dest_lng = offer.to_lng
 
-        # ננסה לגאוקד אם יש כתובות
-        if pickup and pickup != "לא צוין מוצא":
+        # fallback geocode
+        if (pickup_lat is None or pickup_lng is None) and pickup and pickup != "לא צוין מוצא":
             coords = geocode_address(pickup)
             if coords:
                 pickup_lat, pickup_lng = coords
-        if destination and destination != "לא צוין יעד":
+        if (dest_lat is None or dest_lng is None) and destination and destination != "לא צוין יעד":
             coords = geocode_address(destination)
             if coords:
                 dest_lat, dest_lng = coords
 
-        ride_request = TransportRequest.objects.create(
-            sick=request.user,
-            pickup_address=pickup,
-            pickup_lat=pickup_lat,
-            pickup_lng=pickup_lng,
-            destination=destination,
-            dest_lat=dest_lat,
-            dest_lng=dest_lng,
-            requested_time=when,
-            notes=f"נוצר מהצטרפות לנסיעת מתנדב #{offer.id}: {offer.raw_text[:200]}",
-            status="accepted",
-        )
+        if pickup_lat is None or pickup_lng is None:
+            return JsonResponse({"error": "חסרות קואורדינטות למוצא. יש לפרסם שוב ולבחור כתובת מתוך ההצעות."}, status=400)
+        if dest_lat is None or dest_lng is None:
+            return JsonResponse({"error": "חסרות קואורדינטות ליעד. יש לפרסם שוב ולבחור כתובת מתוך ההצעות."}, status=400)
 
-        TransportAssignment.objects.create(
+        # אם למטופל כבר יש TransportRequest פתוחה תואמת, נעדכן אותה במקום ליצור בקשה כפולה
+        existing_request = None
+        best_score = 0.0
+        try:
+            open_reqs = (
+                TransportRequest.objects.filter(sick=request.user, status="open")
+                .order_by("-created_at")[:10]
+            )
+            for r in open_reqs:
+                # אם כבר יש שיוך, אין טעם לעדכן
+                if TransportAssignment.objects.filter(request=r).exists():
+                    continue
+                sc = _score_request_against_offer(r, offer, offer_when)
+                if sc > best_score:
+                    best_score = sc
+                    existing_request = r
+        except Exception:
+            existing_request = None
+            best_score = 0.0
+
+        ride_request = None
+        updated_existing = False
+        if existing_request is not None and best_score >= 0.65:
+            updated_existing = True
+            ride_request = existing_request
+            ride_request.pickup_address = pickup
+            ride_request.pickup_lat = pickup_lat
+            ride_request.pickup_lng = pickup_lng
+            ride_request.destination = destination
+            ride_request.dest_lat = dest_lat
+            ride_request.dest_lng = dest_lng
+            ride_request.requested_time = offer_when
+            ride_request.notes = f"עודכן מהצטרפות לנסיעת מתנדב: {offer.raw_text[:200]}"
+            ride_request.status = "accepted"
+            ride_request.save(
+                update_fields=[
+                    "pickup_address",
+                    "pickup_lat",
+                    "pickup_lng",
+                    "destination",
+                    "dest_lat",
+                    "dest_lng",
+                    "requested_time",
+                    "notes",
+                    "status",
+                ]
+            )
+        else:
+            ride_request = TransportRequest.objects.create(
+                sick=request.user,
+                pickup_address=pickup,
+                pickup_lat=pickup_lat,
+                pickup_lng=pickup_lng,
+                destination=destination,
+                dest_lat=dest_lat,
+                dest_lng=dest_lng,
+                requested_time=offer_when,
+                notes=f"נוצר מהצטרפות לנסיעת מתנדב: {offer.raw_text[:200]}",
+                status="accepted",
+            )
+
+        # שיוך מתנדב (שיוך קיים יעודכן)
+        TransportAssignment.objects.update_or_create(
             request=ride_request,
-            volunteer=offer.volunteer,
+            defaults={"volunteer": offer.volunteer, "accepted_time": timezone.now()},
         )
 
         offer.status = "matched"
@@ -1465,11 +1792,22 @@ def ai_join_offer_api(request, offer_id):
             {
                 "success": True,
                 "request_id": ride_request.id,
-                "message": "הצטרפת לנסיעה. המתנדב רואה עכשיו את הנסיעה כמאושרת.",
+                "message": "הבקשה עודכנה והצטרפת לנסיעה. המתנדב רואה עכשיו את הנסיעה כמאושרת." if updated_existing else "הצטרפת לנסיעה. המתנדב רואה עכשיו את הנסיעה כמאושרת.",
             }
         )
+    except Http404 as e:
+        # RideOffer אינו קיים במצב open (או לא קיים בכלל) ולכן זו לא שגיאת שרת.
+        payload = {"error": "ההצעה לא פתוחה או לא קיימת"}
+        if getattr(settings, "DEBUG", False):
+            payload["detail"] = str(e)
+        return JsonResponse(payload, status=404)
     except Exception as e:
-        return JsonResponse({"error": str(e)}, status=500)
+        logger.exception("ai_join_offer_api error (offer_id=%s): %s", offer_id, e)
+        payload = {"error": "Server error"}
+        if getattr(settings, "DEBUG", False):
+            payload["detail"] = str(e)
+            payload["traceback"] = traceback.format_exc()
+        return JsonResponse(payload, status=500)
 
 
 @csrf_exempt
@@ -1562,3 +1900,305 @@ def ai_request_api(request):
         })
     except Exception as e:
         return JsonResponse({"error": str(e)}, status=500)
+
+
+@csrf_exempt
+def ai_grok_chat_api(request):
+    """
+    Chat with Groq (OpenAI-compatible). Patient describes need in free text.
+    Grok should ask for missing details (date/time, pickup, destination, seats, constraints),
+    and when enough info exists, it returns best matching volunteer offers (ids).
+    """
+    if request.method != "POST":
+        return JsonResponse({"error": "Invalid request"}, status=400)
+    try:
+        # Auth:
+        # - Normal flow: authenticated patient user
+        # - Debug automation: allow token-based access in DEBUG (useful for PowerShell / automation)
+        debug_token = request.headers.get("X-Debug-Token") or request.GET.get("token") or ""
+        token_ok = bool(
+            getattr(settings, "DEBUG", False)
+            and getattr(settings, "DEBUG_AUTOMATION_TOKEN", "")
+            and debug_token
+            and debug_token == getattr(settings, "DEBUG_AUTOMATION_TOKEN", "")
+        )
+
+        if not request.user.is_authenticated and not token_ok:
+            return JsonResponse({"error": "Authentication required"}, status=401)
+
+        if request.user.is_authenticated:
+            if getattr(request.user.profile, "role", None) != "sick":
+                return JsonResponse({"error": "רק מטופלים יכולים להשתמש בסוכן AI"}, status=403)
+
+        api_key = getattr(settings, "GROQ_API_KEY", "") or ""
+        if not api_key:
+            return JsonResponse({"error": "חסר GROQ_API_KEY בשרת."}, status=500)
+
+        data = json.loads(request.body or "{}")
+        messages = data.get("messages") or []
+        if not isinstance(messages, list) or not messages:
+            return JsonResponse({"error": "Missing messages"}, status=400)
+
+        # Keep only last ~12 messages for cost/safety
+        messages = messages[-12:]
+
+        offers = (
+            RideOffer.objects.filter(status="open")
+            .select_related("volunteer")
+            .order_by("-created_at")[:20]
+        )
+        offers_payload = [
+            {
+                "id": o.id,
+                "raw_text": o.raw_text,
+                "from": o.parsed_from or "",
+                "to": o.parsed_to or "",
+                "volunteer_username": o.volunteer.username,
+                "created_at": o.created_at.isoformat(),
+            }
+            for o in offers
+        ]
+
+        system_prompt = (
+            "אתה סוכן עוזר למטופל למצוא נסיעת מתנדב קיימת.\n"
+            "התנהגות חובה:\n"
+            "- אם חסר מידע חשוב (מוצא, יעד, תאריך/שעה, מספר נוסעים/כיסא גלגלים/דחיפות) שאל שאלות קצרות.\n"
+            "- אל תמציא פרטים.\n"
+            "- כשהמידע מספיק, תבחר התאמות מתוך רשימת ההצעות שסיפקתי.\n"
+            "פורמט תשובה חובה: החזר JSON בלבד, בלי טקסט מסביב, בצורה:\n"
+            "{"
+            "\"mode\":\"ask\"|\"match\","
+            "\"reply\":\"טקסט בעברית\","
+            "\"match_ids\":[1,2,3]"
+            "}\n"
+            "- ב mode=ask: match_ids חייב להיות [].\n"
+            "- ב mode=match: match_ids הם מזהים מתוך ההצעות בלבד.\n"
+        )
+
+        xai_messages = [{"role": "system", "content": system_prompt}]
+
+        # Add context as a system message to keep Grok grounded
+        xai_messages.append(
+            {
+                "role": "system",
+                "content": "הצעות מתנדבים זמינות (JSON): " + json.dumps(offers_payload, ensure_ascii=False),
+            }
+        )
+
+        # Forward user chat history
+        for m in messages:
+            if not isinstance(m, dict):
+                continue
+            role = m.get("role")
+            content = m.get("content")
+            if role not in {"user", "assistant"}:
+                continue
+            if not isinstance(content, str):
+                continue
+            xai_messages.append({"role": role, "content": content[:2000]})
+
+        try:
+            resp = requests.post(
+                "https://api.groq.com/openai/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": "llama-3.3-70b-versatile",
+                    "messages": xai_messages,
+                    "temperature": 0.2,
+                    "stream": False,
+                    "max_tokens": 600,
+                },
+                timeout=40,
+            )
+            resp.raise_for_status()
+            out = resp.json()
+            content = (
+                (((out.get("choices") or [{}])[0]).get("message") or {}).get("content") or ""
+            )
+        except Exception as e:
+            logger.exception("Groq chat failed: %s", e)
+            return JsonResponse({"error": "שגיאה בקריאה ל־GROQ."}, status=500)
+
+        # Parse JSON-only response
+        try:
+            parsed = json.loads(content)
+        except Exception:
+            # If model returned non-JSON, still pass it as reply
+            return JsonResponse({"mode": "ask", "reply": content.strip() or "מה מוצא/יעד/תאריך/שעה?", "match_ids": []})
+
+        mode = parsed.get("mode") if isinstance(parsed, dict) else "ask"
+        reply = (parsed.get("reply") if isinstance(parsed, dict) else "") or ""
+        match_ids = parsed.get("match_ids") if isinstance(parsed, dict) else []
+        if mode not in {"ask", "match"}:
+            mode = "ask"
+        if not isinstance(match_ids, list):
+            match_ids = []
+        match_ids = [int(x) for x in match_ids if isinstance(x, (int, float, str)) and str(x).isdigit()]
+
+        # Return matches details so frontend can render cards + join buttons
+        matches = []
+        if mode == "match" and match_ids:
+            offers_map = {o.id: o for o in offers}
+            for oid in match_ids:
+                o = offers_map.get(oid)
+                if not o:
+                    continue
+                matches.append(
+                    {
+                        "id": o.id,
+                        "raw_text": o.raw_text,
+                        "volunteer_username": o.volunteer.username,
+                        "created_at": o.created_at.isoformat(),
+                    }
+                )
+        return JsonResponse({"mode": mode, "reply": reply, "matches": matches})
+    except Exception as e:
+        logger.exception("ai_grok_chat_api error: %s", e)
+        return JsonResponse({"error": "Server error"}, status=500)
+
+
+@csrf_exempt
+def ai_grok_volunteer_chat_api(request):
+    """
+    Chat with Groq for volunteers.
+    Volunteer describes when/where he is driving and how many seats, Groq suggests matching patient requests.
+    """
+    if request.method != "POST":
+        return JsonResponse({"error": "Invalid request"}, status=400)
+    try:
+        # Auth: volunteer user or debug token
+        debug_token = request.headers.get("X-Debug-Token") or request.GET.get("token") or ""
+        token_ok = bool(
+            getattr(settings, "DEBUG", False)
+            and getattr(settings, "DEBUG_AUTOMATION_TOKEN", "")
+            and debug_token
+            and debug_token == getattr(settings, "DEBUG_AUTOMATION_TOKEN", "")
+        )
+
+        if not request.user.is_authenticated and not token_ok:
+            return JsonResponse({"error": "Authentication required"}, status=401)
+
+        if request.user.is_authenticated:
+            if getattr(request.user.profile, "role", None) != "volunteer":
+                return JsonResponse({"error": "רק מתנדבים יכולים להשתמש בסוכן AI למתנדב"}, status=403)
+
+        api_key = getattr(settings, "GROQ_API_KEY", "") or ""
+        if not api_key:
+            return JsonResponse({"error": "חסר GROQ_API_KEY בשרת."}, status=500)
+
+        data = json.loads(request.body or "{}")
+        messages = data.get("messages") or []
+        if not isinstance(messages, list) or not messages:
+            return JsonResponse({"error": "Missing messages"}, status=400)
+
+        messages = messages[-12:]
+
+        # Candidate patient requests: open, not cancelled, upcoming
+        now = timezone.now()
+        reqs = (
+            TransportRequest.objects.filter(status="open", requested_time__gte=now)
+            .select_related("sick", "sick__profile")
+            .order_by("requested_time")[:30]
+        )
+        reqs_payload = [
+            {
+                "id": r.id,
+                "pickup": r.pickup_address,
+                "destination": r.destination,
+                "requested_time": timezone.localtime(r.requested_time).strftime("%Y-%m-%d %H:%M"),
+                "phone": getattr(r.sick.profile, "phone", ""),
+            }
+            for r in reqs
+        ]
+
+        system_prompt = (
+            "אתה סוכן AI שעוזר למתנדב לבחור מטופלים להסעה.\n"
+            "יש לך רשימת בקשות פתוחות של מטופלים (pickup, destination, requested_time, phone).\n"
+            "התנהגות חובה:\n"
+            "- אם חסר מידע חשוב מהמתנדב (מוצא, יעד, תאריך/שעה, כמה מקומות, מגבלות) שאל שאלות קצרות וברורות.\n"
+            "- אל תמציא פרטים.\n"
+            "- כשהמידע מספיק, בחר עד כמה בקשות שמתאימות למסלול של המתנדב.\n"
+            "פורמט תשובה חובה: JSON בלבד, בלי טקסט מסביב, בצורה:\n"
+            "{"
+            "\"mode\":\"ask\"|\"match\","
+            "\"reply\":\"טקסט בעברית למתנדב\","
+            "\"match_ids\":[1,2,3]"
+            "}\n"
+            "- ב mode=ask: match_ids חייב להיות [].\n"
+            "- ב mode=match: match_ids הם מזהים מתוך רשימת הבקשות בלבד.\n"
+        )
+
+        xai_messages = [{"role": "system", "content": system_prompt}]
+        xai_messages.append(
+            {
+                "role": "system",
+                "content": "בקשות מטופלים פתוחות (JSON): " + json.dumps(reqs_payload, ensure_ascii=False),
+            }
+        )
+
+        for m in messages:
+            if not isinstance(m, dict):
+                continue
+            role = m.get("role")
+            content = m.get("content")
+            if role not in {"user", "assistant"}:
+                continue
+            if not isinstance(content, str):
+                continue
+            xai_messages.append({"role": role, "content": content[:2000]})
+
+        try:
+            resp = requests.post(
+                "https://api.groq.com/openai/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": "llama-3.3-70b-versatile",
+                    "messages": xai_messages,
+                    "temperature": 0.2,
+                    "stream": False,
+                    "max_tokens": 600,
+                },
+                timeout=40,
+            )
+            resp.raise_for_status()
+            out = resp.json()
+            content = (
+                (((out.get("choices") or [{}])[0]).get("message") or {}).get("content") or ""
+            )
+        except Exception as e:
+            logger.exception("Groq volunteer chat failed: %s", e)
+            return JsonResponse({"error": "שגיאה בקריאה ל־GROQ."}, status=500)
+
+        try:
+            parsed = json.loads(content)
+        except Exception:
+            return JsonResponse({"mode": "ask", "reply": content.strip() or "מתי אתה יוצא, מאיפה ולאן וכמה מקומות יש?", "match_ids": []})
+
+        mode = parsed.get("mode") if isinstance(parsed, dict) else "ask"
+        reply = (parsed.get("reply") if isinstance(parsed, dict) else "") or ""
+        match_ids = parsed.get("match_ids") if isinstance(parsed, dict) else []
+        if mode not in {"ask", "match"}:
+            mode = "ask"
+        if not isinstance(match_ids, list):
+            match_ids = []
+        match_ids = [int(x) for x in match_ids if isinstance(x, (int, float, str)) and str(x).isdigit()]
+
+        matches = []
+        if mode == "match" and match_ids:
+            req_map = {r.id: r for r in reqs}
+            for rid in match_ids:
+                r = req_map.get(rid)
+                if not r:
+                    continue
+                matches.append(serialize_request(r))
+
+        return JsonResponse({"mode": mode, "reply": reply, "matches": matches})
+    except Exception as e:
+        logger.exception("ai_grok_volunteer_chat_api error: %s", e)
+        return JsonResponse({"error": "Server error"}, status=500)

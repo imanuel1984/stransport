@@ -233,9 +233,14 @@ CELERY_BEAT_SCHEDULE = {
 
 # AI (optional)
 AI_API_KEY = os.environ.get("AI_API_KEY", "")
+XAI_API_KEY = os.environ.get("XAI_API_KEY", "")
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
 
 # Google Places (optional)
 GOOGLE_PLACES_API_KEY = os.environ.get("GOOGLE_PLACES_API_KEY", "")
+
+# Debug-only automation token (for local terminal watchers)
+DEBUG_AUTOMATION_TOKEN = os.environ.get("DEBUG_AUTOMATION_TOKEN", "")
 
 # OSRM (route matrix)
 OSRM_BASE_URL = os.environ.get("OSRM_BASE_URL", "https://router.project-osrm.org")

@@ -14,11 +14,17 @@ if ([string]::IsNullOrWhiteSpace($pollMs)) { $pollMs = "1500" }
 
 $url = "$base/api/errors/latest/"
 $logPath = Join-Path (Get-Location) "errors_watch.log"
+$debugToken = $env:DEBUG_AUTOMATION_TOKEN
+$debugReqId = $env:DEBUG_REQ_ID
 
 Write-Host "Watching errors at $url (poll ${pollMs}ms)..."
 Write-Host "Writing to $logPath"
+if (-not [string]::IsNullOrWhiteSpace($debugToken) -and -not [string]::IsNullOrWhiteSpace($debugReqId)) {
+  Write-Host "Also watching debug location: /api/debug/requests/location/$debugReqId/ (token header)"
+}
 
 $seen = @{}
+$lastLocKey = ""
 
 while ($true) {
   try {
@@ -65,6 +71,24 @@ while ($true) {
 
         # append to file
         $lines | Out-File -FilePath $logPath -Encoding utf8 -Append
+      }
+    }
+
+    # Optional: also poll debug location endpoint (no cookies needed)
+    if (-not [string]::IsNullOrWhiteSpace($debugToken) -and -not [string]::IsNullOrWhiteSpace($debugReqId)) {
+      try {
+        $locUrl = "$base/api/debug/requests/location/$debugReqId/"
+        $locResp = Invoke-RestMethod -Uri $locUrl -Method Get -Headers @{ Accept = "application/json"; "X-DEBUG-TOKEN" = $debugToken } -TimeoutSec 5
+        $locJson = ($locResp | ConvertTo-Json -Compress)
+        if ($locJson -ne $lastLocKey) {
+          $lastLocKey = $locJson
+          $line = "[debug.location $debugReqId] $locJson"
+          Write-Host ""
+          Write-Host $line
+          $line | Out-File -FilePath $logPath -Encoding utf8 -Append
+        }
+      } catch {
+        # ignore debug polling errors
       }
     }
   } catch {

@@ -51,6 +51,12 @@
     <div class="field-error" id="login-submit-error"></div>
     <button type="submit" id="login-btn" disabled>כניסה</button>
 </form>
+
+<div style="margin-top:14px; display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
+  <a href="/guest/?role=sick" class="button" style="background:#2563eb; color:#fff; text-decoration:none; display:inline-block;">כניסה כאורח</a>
+  <div style="color:#64748b; font-weight:700;">דמו בלי פעולות להתרשם(אפשר להחליף מטופל/מתנדב) </div>
+</div>
+
 <script>
   const loginForm = document.querySelector('form[method="post"]');
   const loginBtn = document.getElementById('login-btn');

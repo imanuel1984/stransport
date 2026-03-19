@@ -23,6 +23,8 @@ html,
 body {
   max-width: 100%;
   overflow-x: hidden;
+  overflow-y: scroll;
+  scrollbar-gutter: stable;
 }
 
 body {
@@ -149,6 +151,43 @@ button[type="submit"]:hover {
   transform: translateY(-1px);
   filter: brightness(1.02);
   box-shadow: 0 14px 30px rgba(249, 115, 22, 0.32);
+}
+
+.top-actions {
+  margin: 12px 0;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+
+.top-action-button {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 6px !important;
+  font-size: 0.95rem !important;
+  text-align: center !important;
+  min-width: 210px !important;
+  min-height: 44px !important;
+  white-space: nowrap !important;
+  padding: 10px 14px !important;
+  border-radius: 12px !important;
+  background: linear-gradient(135deg, var(--accent), #fb923c) !important;
+  color: #0f172a !important;
+  border: none !important;
+  box-shadow: 0 10px 20px rgba(249, 115, 22, 0.25) !important;
+  font-size: 1rem !important;
+  font-weight: 800 !important;
+  letter-spacing: 0.2px !important;
+  text-shadow: 0 0 1px rgba(0,0,0,.08) !important;
+  text-transform: none !important;
+}
+
+.top-action-button:hover {
+  transform: translateY(-1px) !important;
+  filter: brightness(1.03) !important;
+  box-shadow: 0 14px 30px rgba(249, 115, 22, 0.32) !important;
 }
 
 .accept-btn {

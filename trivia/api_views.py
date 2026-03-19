@@ -19,8 +19,6 @@ GROQ_MODEL = "llama-3.1-8b-instant"
 def login_required_json(view_func):
     @wraps(view_func)
     def _wrapped(request, *args, **kwargs):
-        if not request.user.is_authenticated:
-            return JsonResponse({"error": "Authentication required"}, status=401)
         return view_func(request, *args, **kwargs)
     return _wrapped
 
@@ -196,8 +194,9 @@ def ai_chat(request):
             max_uses = 2
             limit_msg = f"הגעת למקסימום {max_uses} הודעות צ'אט לשאלה זו. נסה לפתור בעצמך! 💪"
         
+        user_id = request.user.id if request.user.is_authenticated else "guest";
         allowed, count, max_allowed = _check_rate_limit(
-            request.user.id, 
+            user_id,
             q['question'], 
             feature, 
             max_uses=max_uses
@@ -270,8 +269,9 @@ def ai_explain(request):
             return JsonResponse({"text": "ענה קודם ואז אוכל להסביר."})
 
         # בדוק הגבלת שימוש - מקסימום 1 הסבר לשאלה
+        user_id = request.user.id if request.user.is_authenticated else "guest";
         allowed, count, max_uses = _check_rate_limit(
-            request.user.id, 
+            user_id,
             q['question'], 
             'explain', 
             max_uses=1
