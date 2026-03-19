@@ -77,7 +77,7 @@
   <!-- חלונית קיצור לפרסום / בקשת נסיעה -->
 
   <!-- Modal להצגת נסיעות שפורסמו / פרסום נסיעה -->
-  <div id="ai-mode-modal" style="display:none; position:fixed; left:50%; top:50%; transform:translate(-50%,-50%); background:#fff; border:1px solid #ddd; padding:16px; z-index:2000; box-shadow:0 8px 24px rgba(0,0,0,0.2); width:420px; border-radius:8px;">
+  <div id="ai-mode-modal" style="display:none; position:fixed; left:50%; top:50%; transform:translate(-50%,-50%); background:#fff; border:1px solid #ddd; padding:16px; z-index:2000; box-shadow:0 8px 24px rgba(0,0,0,0.2); width:92vw; max-width:420px; max-height:85vh; overflow:auto; border-radius:8px;">
     <h3 id="ai-modal-title" style="margin-top:0;">פרסום נסיעות</h3>
     <div id="ai-modal-body" style="max-height:60vh; overflow-y:auto;">
       <div id="ai-offers-container">
@@ -90,7 +90,7 @@
   </div>
 
   <!-- Modal: סוכן AI למטופל (צ'אט קצר להתאמת נסיעות מתנדבים) -->
-  <div id="ai-agent-modal" style="display:none; position:fixed; left:50%; top:50%; transform:translate(-50%,-50%); background:#fff; border:1px solid #ddd; padding:16px; z-index:2200; box-shadow:0 8px 24px rgba(0,0,0,0.2); width:460px; border-radius:10px;">
+  <div id="ai-agent-modal" style="display:none; position:fixed; left:50%; top:50%; transform:translate(-50%,-50%); background:#fff; border:1px solid #ddd; padding:16px; z-index:2200; box-shadow:0 8px 24px rgba(0,0,0,0.2); width:92vw; max-width:460px; max-height:85vh; overflow:auto; border-radius:10px;">
     <h3 style="margin-top:0;">סוכן AI — מטופל</h3>
     <div class="field-hint" style="margin-bottom:8px;">כתוב מה אתה צריך, ואציג לך נסיעות מתנדבים שפורסמו שאפשר להצטרף אליהן.</div>
     <textarea id="ai-agent-input" rows="3" style="width:100%;resize:vertical;border:1px solid #e2e8f0;border-radius:10px;padding:10px;font-family:inherit;"></textarea>
@@ -99,11 +99,11 @@
       <button type="button" id="ai-agent-send" class="btn-primary" style="background:#2563eb;color:#fff;border:none;padding:8px 12px;border-radius:10px;cursor:pointer;">שלח</button>
       <button type="button" id="ai-agent-close" class="button">סגירה</button>
     </div>
-    <div id="ai-agent-results" style="margin-top:12px; max-height:50vh; overflow-y:auto;"></div>
+    <div id="ai-agent-results" style="margin-top:12px; max-height:45vh; overflow-y:auto;"></div>
   </div>
 
   <!-- Modal: סוכן AI למתנדב -->
-  <div id="ai-vol-agent-modal" style="display:none; position:fixed; left:50%; top:50%; transform:translate(-50%,-50%); background:#fff; border:1px solid #ddd; padding:16px; z-index:2200; box-shadow:0 8px 24px rgba(0,0,0,0.2); width:460px; border-radius:10px;">
+  <div id="ai-vol-agent-modal" style="display:none; position:fixed; left:50%; top:50%; transform:translate(-50%,-50%); background:#fff; border:1px solid #ddd; padding:16px; z-index:2200; box-shadow:0 8px 24px rgba(0,0,0,0.2); width:92vw; max-width:460px; max-height:85vh; overflow:auto; border-radius:10px;">
     <h3 style="margin-top:0;">סוכן AI — מתנדב</h3>
     <div class="field-hint" style="margin-bottom:8px;">כתוב מתי אתה יוצא, מאיפה ולאן וכמה מקומות יש, ואציע לך מטופלים מתאימים.</div>
     <textarea id="ai-vol-agent-input" rows="3" style="width:100%;resize:vertical;border:1px solid #e2e8f0;border-radius:10px;padding:10px;font-family:inherit;"></textarea>
@@ -112,7 +112,7 @@
       <button type="button" id="ai-vol-agent-send" class="btn-primary" style="background:#2563eb;color:#fff;border:none;padding:8px 12px;border-radius:10px;cursor:pointer;">שלח</button>
       <button type="button" id="ai-vol-agent-close" class="button">סגירה</button>
     </div>
-    <div id="ai-vol-agent-results" style="margin-top:12px; max-height:50vh; overflow-y:auto;"></div>
+    <div id="ai-vol-agent-results" style="margin-top:12px; max-height:45vh; overflow-y:auto;"></div>
   </div>
 
 
@@ -126,7 +126,7 @@
     <div style="max-width:980px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
       <div style="color:#475569;font-weight:700;">© {% now "Y" %} עמנואל גולובוק — כל הזכויות שמורות</div>
 
-      <div style="color:#475569;font-weight:700;">
+      <div style="color:#475569;font-weight:700; display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
         {% if current_user.is_authenticated %}
         <a href="/" style="color:#2563eb;text-decoration:none;margin-left:10px;">דף הבית</a>
         <a href="/trivia/" style="color:#2563eb;text-decoration:none;margin-left:10px;">טריוויה</a>
@@ -139,18 +139,18 @@
         {% endif %}
         <a href="mailto:imanuel1984@outlook.com" style="color:#2563eb;text-decoration:none;margin-left:10px;">צור קשר</a>
         <!-- LTR toggle: left-to-right layout (easier when mixing Hebrew + English) -->
-        <button id="toggle-ltr" type="button" style="min-width:48px; margin:0 10px; padding:6px 10px; background:#64748b; color:#fff; border-radius:6px; border:none; cursor:pointer;" title="משמאל לימין / Left-to-right">LTR</button>
-        <!-- Quick AI Agent UI: show recent matches (requires login) -->
+        <button id="toggle-ltr" type="button" style="min-width:48px; padding:6px 10px; background:#64748b; color:#fff; border-radius:6px; border:none; cursor:pointer;" title="משמאל לימין / Left-to-right">LTR</button>
+        <!-- Footer AI button: keep next to LTR -->
         {% if current_user.is_authenticated and current_user.profile.role == "sick" %}
-        <button id="ai-agent-launch-footer" style="margin-left:10px; padding:6px 10px; background:#2563eb; color:#fff; border-radius:6px; border:none; cursor:pointer;" title="סוכן AI – חיפוש נסיעות מתנדבים">סוכן AI</button>
+        <button id="ai-agent-launch-footer" style="padding:6px 10px; background:#2563eb; color:#fff; border-radius:6px; border:none; cursor:pointer;" title="סוכן AI – חיפוש נסיעות מתנדבים">סוכן AI</button>
         {% elif current_user.is_authenticated and current_user.profile.role == "volunteer" %}
-        <button id="ai-vol-agent-launch-footer" style="margin-left:10px; padding:6px 10px; background:#2563eb; color:#fff; border-radius:6px; border:none; cursor:pointer;" title="סוכן AI – התאמת מטופלים להסעה">סוכן AI</button>
+        <button id="ai-vol-agent-launch-footer" style="padding:6px 10px; background:#2563eb; color:#fff; border-radius:6px; border:none; cursor:pointer;" title="סוכן AI – התאמת מטופלים להסעה">סוכן AI</button>
         {% elif guest_mode and guest_role == "sick" %}
-        <button id="ai-agent-launch-footer" style="margin-left:10px; padding:6px 10px; background:#2563eb; color:#fff; border-radius:6px; border:none; cursor:pointer;" title="סוכן AI (דמו) – חיפוש נסיעות מתנדבים">סוכן AI</button>
+        <button id="ai-agent-launch-footer" style="padding:6px 10px; background:#2563eb; color:#fff; border-radius:6px; border:none; cursor:pointer;" title="סוכן AI (דמו) – חיפוש נסיעות מתנדבים">סוכן AI</button>
         {% elif guest_mode and guest_role == "volunteer" %}
-        <button id="ai-vol-agent-launch-footer" style="margin-left:10px; padding:6px 10px; background:#2563eb; color:#fff; border-radius:6px; border:none; cursor:pointer;" title="סוכן AI (דמו) – התאמת מטופלים להסעה">סוכן AI</button>
+        <button id="ai-vol-agent-launch-footer" style="padding:6px 10px; background:#2563eb; color:#fff; border-radius:6px; border:none; cursor:pointer;" title="סוכן AI (דמו) – התאמת מטופלים להסעה">סוכן AI</button>
         {% elif not current_user.is_authenticated %}
-        <button type="button" class="trivia-require-login-btn" style="margin-left:10px; padding:6px 10px; background:#2563eb; color:#fff; border-radius:6px; border:none; cursor:pointer;" title="סוכן AI (נדרשת כניסה)">סוכן AI</button>
+        <button type="button" class="trivia-require-login-btn" style="padding:6px 10px; background:#2563eb; color:#fff; border-radius:6px; border:none; cursor:pointer;" title="סוכן AI (נדרשת כניסה)">סוכן AI</button>
         {% endif %}
       </div>
     </div>
