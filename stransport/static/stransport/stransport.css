@@ -42,6 +42,23 @@ body {
   flex-direction: column;
 }
 
+/* ---------- Mobile footer overflow fixes (Android narrow screens) ---------- */
+@media (max-width: 430px) {
+  .app-footer {
+    padding: 10px 12px !important;
+  }
+  .app-footer a {
+    margin-left: 0 !important;
+    white-space: nowrap;
+  }
+  .app-footer button {
+    min-width: 0 !important;
+  }
+  .app-footer [style*="gap:10px"] {
+    gap: 6px !important;
+  }
+}
+
 /* LTR mode: full layout left-to-right (toggle in footer) */
 html.layout-ltr,
 html.layout-ltr body,
