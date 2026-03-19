@@ -18,4 +18,13 @@ for i in 1 2 3 4 5 6 7 8 9 10; do
   echo "Migrate attempt $i failed, retry in 5s..."
   sleep 5
 done
+
+# Create/update Django admin user in Render if configured.
+# (safe to run every boot; command is idempotent)
+if [ -n "$ADMIN_PASSWORD" ]; then
+  python manage.py ensureadmin || true
+else
+  echo "ADMIN_PASSWORD not set; skipping ensureadmin"
+fi
+
 exec gunicorn --bind 0.0.0.0:${PORT:-8000} --workers 3 --timeout 60 stransport_pro.wsgi:application
