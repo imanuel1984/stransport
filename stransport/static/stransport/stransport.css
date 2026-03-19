@@ -902,6 +902,16 @@ a.button:hover {
     padding: 20px 18px 24px;
   }
 
+  /* Prevent horizontal overflow on small screens (top action buttons). */
+  .top-actions {
+    justify-content: stretch;
+  }
+  .top-action-button {
+    min-width: 0 !important;
+    width: 100% !important;
+    white-space: normal !important;
+  }
+
   /* דפי auth במובייל: טופס תופס רוב המסך (מרגות קטנות), הטקסט העליון נשאר גלוי כמו בדסקטופ */
   .auth-page main.auth-main {
     max-width: 100%;

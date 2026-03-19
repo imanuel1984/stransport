@@ -59,6 +59,31 @@
   box-shadow: 0 10px 22px rgba(0,0,0,0.08);
 }
 
+/* Mobile: stack layout and avoid horizontal overflow */
+@media (max-width: 720px) {
+  .trivia-shell {
+    padding: 0 10px;
+  }
+  .two-col {
+    flex-direction: column;
+    direction: rtl;
+  }
+  .sidebar {
+    width: 100%;
+    flex: 1 1 auto;
+  }
+  .content {
+    width: 100%;
+  }
+  .select, #topicSelect, select {
+    min-width: 0;
+    width: 100%;
+  }
+  .card {
+    padding: 16px;
+  }
+}
+
 .select:focus, #topicSelect:focus, select:focus {
   outline: none;
   border-color: #2563eb;
