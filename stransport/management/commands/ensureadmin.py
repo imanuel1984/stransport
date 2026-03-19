@@ -28,6 +28,19 @@ class Command(BaseCommand):
                 # If ADMIN_PASSWORD is provided, ensure the admin password matches the current env.
                 # This fixes the common case where the user already exists from a previous deploy.
                 if password:
+                    changed_flags = False
+                    if not u.is_active:
+                        u.is_active = True
+                        changed_flags = True
+                    if not u.is_staff:
+                        u.is_staff = True
+                        changed_flags = True
+                    if not u.is_superuser:
+                        u.is_superuser = True
+                        changed_flags = True
+                    if changed_flags:
+                        u.save(update_fields=["is_active", "is_staff", "is_superuser"])
+                        self.stdout.write(self.style.SUCCESS("עודכנו הרשאות אדמין (is_staff/is_superuser/is_active)."))
                     u.set_password(password)
                     u.save(update_fields=["password"])
                     self.stdout.write(self.style.SUCCESS("עודכנה סיסמת האדמין לפי ADMIN_PASSWORD."))
